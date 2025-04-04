@@ -1,0 +1,2 @@
+1. g++ -o rat_client_new simple_rat_client.cpp -lws2_32 -lgdiplus -lgdi32 -lole32  // till screenshot
+2. g++ -o Warp.exe rat_client.cpp -lws2_32 -lgdi32 -lole32 -lgdiplus -DUNICODE -D_UNICODE  // for process_management

