@@ -73,18 +73,18 @@ python python_rat_server.py
 - GDI+ (Graphics Device Interface)
 - OLE32 (Component Object Model)
 
-### Compilation
-
-```bash
-g++ -o rat_client simple_rat_client.cpp -lws2_32 -lgdiplus -lgdi32 -lole32
-```
-
 ### Configuration
 
 Before running the client, edit the `simple_rat_client.cpp` file to set the server IP address:
 
 ```cpp
 #define SERVER_IP "127.0.0.1" // Change to your server IP
+```
+
+### Compilation
+
+```bash
+g++ -o rat_client simple_rat_client.cpp -lws2_32 -lgdiplus -lgdi32 -lole32
 ```
 
 ### Features
