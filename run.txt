@@ -1,0 +1,1 @@
+g++ -o rat_client_new simple_rat_client.cpp -lws2_32 -lgdiplus -lgdi32 -lole32

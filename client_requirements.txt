@@ -1,0 +1,14 @@
+# C++ Dependencies for simple_rat_client.cpp
+
+Required Libraries:
+- Windows Socket API (WinSock2)
+- Windows API
+- GDI+ (Graphics Device Interface)
+- OLE32 (Component Object Model)
+
+Compiler Requirements:
+- C++11 or later
+- MinGW-w64 or Visual C++ compiler
+
+Build Command:
+g++ -o rat_client simple_rat_client.cpp -lws2_32 -lgdiplus -lgdi32 -lole32
