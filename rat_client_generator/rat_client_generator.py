@@ -49,7 +49,7 @@ def generate_random_string(length=8):
 
 def generate_client(options):
     # Source file path
-    source_file = "simple_rat_client.cpp"
+    source_file = "rat_client.cpp"
     
     if not os.path.exists(source_file):
         print(f"{Fore.RED}Error: Source file {source_file} not found!{Style.RESET_ALL}")
