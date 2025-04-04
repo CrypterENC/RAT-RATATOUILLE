@@ -255,8 +255,7 @@ bool capture_and_send_screenshot(SOCKET sock)
     int total_sent = 0;
     while (total_sent < streamSize)
     {
-        int chunk_size = (streamSize - total_sent < 1024) ? 
-                         static_cast<int>(streamSize - total_sent) : 1024;
+        int chunk_size = (streamSize - total_sent < 1024) ? static_cast<int>(streamSize - total_sent) : 1024;
         int sent = send(sock, (char *)buffer.data() + total_sent, chunk_size, 0);
         if (sent <= 0)
         {
@@ -390,6 +389,4 @@ int main()
     WSACleanup();
     return 0;
 }
-
-
 
