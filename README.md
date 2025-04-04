@@ -13,7 +13,7 @@ A simple client-server remote access tool with basic monitoring capabilities.
 
 ## Components
 
-This project consists of three main components:
+This project consists of four main components:
 
 - Python RAT Server: Command and control server
 - C++ RAT Client: Client application that connects to the server
