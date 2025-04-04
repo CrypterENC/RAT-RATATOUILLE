@@ -11,6 +11,9 @@
 
 A simple client-server remote access tool with basic monitoring capabilities.
 
+# [!!] DISCLAIMER
+TLDR: Please use securely and ethically :D
+
 ## Components
 
 This project consists of two main components:
