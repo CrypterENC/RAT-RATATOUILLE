@@ -20,6 +20,7 @@ This project consists of two main components:
 
 - Python RAT Server: Command and control server
 - C++ RAT Client: Client application that connects to the server
+- Custom RAT Client Generator.
 
 ## Python RAT Server
 
