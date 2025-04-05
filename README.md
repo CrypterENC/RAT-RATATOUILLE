@@ -9,7 +9,7 @@
 ╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝   ╚═╝    ╚═════╝  ╚═════╝ ╚═╝╚══════╝╚══════╝╚══════╝
 ```
 
-A simple client-server remote access tool with basic monitoring capabilities.
+A simple (it was a simple RAT, but now... 🐀) client-server remote access tool with basic monitoring capabilities.
 
 ## Components
 
