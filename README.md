@@ -19,7 +19,6 @@ The project emphasizes:
 
 - **Modularity**: Separate components that work together seamlessly
 - **Flexibility**: Customizable configurations for various deployment scenarios
-- **Security**: Proper authentication and secure communication channels
 - **Usability**: Intuitive interfaces for both server and client components
 - **Scalability**: Designed to handle multiple client connections efficiently
 
