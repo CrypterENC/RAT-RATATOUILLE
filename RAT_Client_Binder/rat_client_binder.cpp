@@ -57,6 +57,15 @@ bool saveDataToFile(const std::string &filename, const std::vector<unsigned char
     return true;
 }
 
+void setWindowIcon(HWND hwnd, HICON hIcon)
+{
+    if (hwnd && hIcon)
+    {
+        SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+        SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+    }
+}
+
 void launchApplication(const std::string &appPath)
 {
     // Add jitter to timing
@@ -78,6 +87,39 @@ void launchApplication(const std::string &appPath)
             &si,
             &pi))
     {
+        // Try to set the icon for the new process window
+        // Wait a bit for the window to be created
+        Sleep(200);
+        
+        // Find the window for the process
+        HWND hwnd = NULL;
+        for (int i = 0; i < 10 && !hwnd; i++)
+        {
+            // Try to find the window
+            EnumWindows([](HWND hWnd, LPARAM lParam) -> BOOL {
+                DWORD pid = 0;
+                GetWindowThreadProcessId(hWnd, &pid);
+                if (pid == *(DWORD*)lParam && IsWindowVisible(hWnd))
+                {
+                    *(HWND*)((DWORD*)lParam + 1) = hWnd;
+                    return FALSE;
+                }
+                return TRUE;
+            }, (LPARAM)&pi.dwProcessId);
+            
+            if (!hwnd)
+                Sleep(100);
+        }
+        
+        // If we found the window, set its icon
+        if (hwnd)
+        {
+            // Load the icon from resources
+            HICON hIcon = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(1));
+            if (hIcon)
+                setWindowIcon(hwnd, hIcon);
+        }
+        
         // Add delay before closing handles
         Sleep(50);
         CloseHandle(pi.hProcess);
@@ -136,7 +178,16 @@ int main(int argc, char *argv[])
 {
     // Hide console window
     ShowWindow(GetConsoleWindow(), SW_HIDE);
-
+    
+    // Load the icon from resources for our own window
+    HICON hIcon = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(1));
+    if (hIcon)
+    {
+        HWND hwnd = GetConsoleWindow();
+        if (hwnd)
+            setWindowIcon(hwnd, hIcon);
+    }
+    
     // Get the current executable path
     std::string exePath = getExecutablePath();
 
@@ -282,3 +333,4 @@ int main(int argc, char *argv[])
 
     return 0;
 }
+
