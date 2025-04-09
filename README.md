@@ -11,27 +11,39 @@
 
 A comprehensive client-server remote access tool with advanced monitoring and control capabilities.
 
-## Project Overview
+## 🚀 Project Overview
 
-RAT_RATATOUILLE is a comprehensive remote access tool designed for educational purposes and legitimate system administration. It provides a robust client-server architecture with advanced monitoring and control capabilities, allowing administrators to remotely manage systems securely and efficiently.
+RAT_RATATOUILLE is a sophisticated remote access tool designed for educational purposes and legitimate system administration. It provides a robust client-server architecture with advanced monitoring and control capabilities, allowing administrators to remotely manage systems securely and efficiently.
 
 The project emphasizes:
 
 - **Modularity**: Separate components that work together seamlessly
 - **Flexibility**: Customizable configurations for various deployment scenarios
-- **Security**: Proper authentication and secure communication channels
 - **Usability**: Intuitive interfaces for both server and client components
+- **Scalability**: Designed to handle multiple client connections efficiently
 
 ## 🧩 Project Components
 
 RAT_RATATOUILLE consists of four main components:
 
-1. **Python RAT Server**: Command and control server
-2. **C++ RAT Client**: Client application that connects to the server
-3. **RAT Client Generator**: Tool to create customized client executables
-4. **RAT Client Binder**: Tool to bind the client with legitimate applications
+1. **Python RAT Server**: Command and control server with real-time monitoring dashboard
+2. **C++ RAT Client**: Lightweight, efficient client application that connects to the server
+3. **RAT Client Generator**: Tool to create customized client executables with specific configurations
+4. **RAT Client Binder**: Tool to bind the client with legitimate applications for seamless deployment
 
-## Installation
+## 📋 Quick Start Guide
+
+### Server Setup
+
+1. ` Run .\install_depen.bat ` - Sets up the complete development environment
+2. ` Run .\setup_and_run.bat ` - Configures and launches the server
+
+### Client Deployment
+
+1. ` Run .\RAT_Client_Generator\rat_client_generator.py ` - Creates customized client executable
+2. ` Run .\RAT_Client_Binder\binder.py ` - Optionally binds client with legitimate application
+
+## 💻 Installation
 
 ### Automatic Installation (Windows)
 
@@ -50,6 +62,7 @@ This script will:
 5. Create verification instructions and backup installers on your desktop
 
 The setup script features:
+
 - Administrator privilege verification
 - Colorful, informative progress indicators
 - Automatic download of all required components
@@ -92,10 +105,6 @@ After running the setup scripts, complete these additional steps:
 
    - Ensures all PATH changes take effect
    - Completes the environment configuration
-
-4. **Update Firewall Settings**
-   - Allow the server application through your firewall
-   - Configure port forwarding if needed for remote connections
 
 ## ✅ Verification
 
