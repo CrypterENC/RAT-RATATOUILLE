@@ -15,6 +15,7 @@
 #include <psapi.h> // For GetModuleFileNameExA
 #include <sstream>
 #include <algorithm>
+#include <cstdint>
 
 // Link with required libraries
 #pragma comment(lib, "gdiplus.lib")
