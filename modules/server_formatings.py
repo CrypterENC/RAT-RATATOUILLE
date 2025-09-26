@@ -290,6 +290,9 @@ def format_client_command_help():
         ("system_logs <type> <count>", "Get specific number of log entries"),
         ("installed_software", "List installed software"),
         ("launch_app [name]", "Launch an application on the client"),
+        ("shell", "Start interactive real-time shell session"),
+        ("start_screen_share", "Start real-time screen sharing (10 FPS JPEG stream)"),
+        ("stop_screen_share", "Stop active screen sharing session"),
     ]
     
     # Group commands by category
@@ -298,7 +301,7 @@ def format_client_command_help():
         "Connection": ["kill", "exit"],
         "Information": ["sysinfo", "installed_software", "netinfo"],
         "Process Management": ["list_processes", "search_process", "terminate_process", "system_logs"],
-        "Actions": ["screenshot", "launch_app", "send_keys"],
+        "Actions": ["screenshot", "launch_app", "send_keys", "shell", "start_screen_share", "stop_screen_share"],
     }
     
     # Display commands by category

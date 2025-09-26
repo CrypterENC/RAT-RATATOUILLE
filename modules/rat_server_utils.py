@@ -98,6 +98,105 @@ def receive_screenshot(client_socket, BUFFER_SIZE):
         print(f"{Fore.RED}Error receiving screenshot: {str(e)}{Style.RESET_ALL}")
         return None
 
+def receive_screen_share(client_socket, BUFFER_SIZE):
+    """Receive screen sharing stream from client and save frames"""
+    try:
+        import threading
+        import queue
+        
+        # Create screenshots directory if it doesn't exist
+        if not os.path.exists("screen_share"):
+            os.makedirs("screen_share")
+        
+        print(f"{Fore.CYAN}╔════════════════════════════════════════════════════╗{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.WHITE}🖥️  SCREEN SHARING SESSION ACTIVE{Style.RESET_ALL}{' ' * 14} {Fore.CYAN}║{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.YELLOW}Receiving live screen stream...{Style.RESET_ALL}{' ' * 17} {Fore.CYAN}║{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.GREEN}Press Ctrl+C to stop screen sharing{Style.RESET_ALL}{' ' * 12} {Fore.CYAN}║{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}╚════════════════════════════════════════════════════╝{Style.RESET_ALL}")
+        
+        frame_count = 0
+        
+        # Wait for screen sharing start marker
+        marker_data = b""
+        start_marker = b"##SCREEN_SHARE_START##"
+        while start_marker not in marker_data:
+            chunk = client_socket.recv(1024)
+            if not chunk:
+                print(f"{Fore.RED}Connection lost while waiting for screen share start{Style.RESET_ALL}")
+                return False
+            marker_data += chunk
+            # Limit buffer size to prevent memory issues
+            if len(marker_data) > 10240:  # 10KB limit
+                marker_data = marker_data[-5120:]  # Keep last 5KB
+        
+        print(f"{Fore.GREEN}Screen sharing started! Receiving frames...{Style.RESET_ALL}")
+        
+        while True:
+            try:
+                # Receive frame size (4 bytes)
+                size_data = b""
+                while len(size_data) < 4:
+                    chunk = client_socket.recv(4 - len(size_data))
+                    if not chunk:
+                        print(f"{Fore.YELLOW}Connection closed by client{Style.RESET_ALL}")
+                        return True
+                    size_data += chunk
+                
+                # Convert bytes to frame size (little-endian)
+                frame_size = int.from_bytes(size_data, byteorder='little')
+                
+                # Check for end marker in the size data
+                if b"##SCREEN_SHARE_END##" in size_data:
+                    print(f"{Fore.YELLOW}Screen sharing ended by client{Style.RESET_ALL}")
+                    return True
+                
+                # Validate frame size (should be reasonable for JPEG)
+                if frame_size > 10 * 1024 * 1024:  # Max 10MB per frame
+                    print(f"{Fore.RED}Invalid frame size: {frame_size} bytes{Style.RESET_ALL}")
+                    continue
+                
+                # Receive frame data
+                frame_data = b""
+                bytes_received = 0
+                
+                while bytes_received < frame_size:
+                    chunk_size = min(BUFFER_SIZE, frame_size - bytes_received)
+                    chunk = client_socket.recv(chunk_size)
+                    if not chunk:
+                        print(f"{Fore.RED}Connection lost while receiving frame{Style.RESET_ALL}")
+                        return False
+                    frame_data += chunk
+                    bytes_received += len(chunk)
+                
+                # Save frame to file
+                frame_count += 1
+                timestamp = time.strftime("%Y%m%d-%H%M%S")
+                filename = f"screen_share/frame_{timestamp}_{frame_count:04d}.jpg"
+                
+                with open(filename, "wb") as f:
+                    f.write(frame_data)
+                
+                # Show progress every 10 frames
+                if frame_count % 10 == 0:
+                    print(f"{Fore.GREEN}Received frame {frame_count} ({len(frame_data)} bytes) -> {filename}{Style.RESET_ALL}")
+                
+            except KeyboardInterrupt:
+                print(f"\n{Fore.YELLOW}Screen sharing stopped by user{Style.RESET_ALL}")
+                # Send stop command to client
+                try:
+                    client_socket.send("stop_screen_share".encode())
+                except:
+                    pass
+                return True
+            except Exception as e:
+                print(f"{Fore.RED}Error receiving frame: {str(e)}{Style.RESET_ALL}")
+                # Try to continue receiving, might be a temporary error
+                continue
+        
+    except Exception as e:
+        print(f"{Fore.RED}Error in screen sharing session: {str(e)}{Style.RESET_ALL}")
+        return False
+
 def show_client_commands():
     """Show available client commands"""
     # Use the formatted client command help from server_formatings.py

