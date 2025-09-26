@@ -24,12 +24,12 @@ The project emphasizes:
 
 ## 🧩 Project Components
 
-RAT_RATATOUILLE consists of four main components:
+RAT_RATATOUILLE v1.6 consists of four main components:
 
 1. **Python RAT Server**: Command and control server with real-time monitoring dashboard
-2. **C++ RAT Client**: Lightweight, efficient client application that connects to the server
-3. **RAT Client Generator**: Tool to create customized client executables with specific configurations
-4. **RAT Client Binder**: Tool to bind the client with legitimate applications for seamless deployment
+2. **C++ RAT Client v1.6**: Advanced client with screen sharing, interactive shell, and polymorphic features
+3. **RAT Client Generator**: Tool to create customized client executables with polymorphic code generation
+4. **RAT Client Binder v1.6**: Tool to bind the client with legitimate applications for seamless deployment
 
 ## 📋 Quick Start Guide
 
@@ -152,15 +152,19 @@ Verify your installation with these steps:
 - **Comprehensive Logging**: Record all activities for audit purposes
 - **Customizable Configuration**: Adjust server settings through options menu
 
-### Client Features
+### Client Features (v1.6)
 
 - **Persistent Connection**: Automatic reconnection if connection is lost
+- **Interactive Shell**: Real-time command shell access with full terminal emulation
+- **Screen Sharing**: Live screen monitoring at 10 FPS with JPEG compression
 - **System Information Collection**: Hardware, software, and network details
 - **Process Management**: List, search, and terminate processes
 - **Screenshot Capability**: Capture screen content remotely
 - **Keystroke Sending**: Send keystrokes to applications
 - **Application Control**: Launch and interact with applications
 - **System Logs Access**: Retrieve various system event logs
+- **Polymorphic Code**: Unique builds with randomized functions and encryption
+- **XOR Encryption**: Obfuscated strings and network traffic
 
 ## ⚙️ Server Configuration
 
@@ -260,9 +264,38 @@ Select `options` from the main menu to change settings interactively:
 | Command                           | Description                              |
 | --------------------------------- | ---------------------------------------- |
 | `screenshot`                      | Take a screenshot of the client's screen |
+| `shell`                           | Start an interactive shell session       |
+| `start_screen_share`              | Begin real-time screen sharing (10 FPS)  |
+| `stop_screen_share`               | Stop the active screen sharing session   |
 | `launch_app [name]`               | Launch an application on the client      |
 | `send_keys <process_name> <keys>` | Send keys to a process by name           |
 | `type <keys>`                     | Send keystrokes to the active window     |
+
+## 🛡️ Advanced Security Features (v1.6)
+
+Version 1.6 introduces several advanced security and evasion features:
+
+### Polymorphic Code Generation
+
+Each build of the RAT client is unique, making detection more difficult:
+
+- **Function Name Randomization**: All internal function names are randomized
+- **Variable Name Randomization**: Key variables receive unique names per build
+- **Code Flow Variation**: Execution paths vary between builds
+- **Build Signatures**: Each build has a unique identifier for tracking
+
+### Encryption and Obfuscation
+
+- **XOR Encryption**: All sensitive strings and network traffic are XOR-encrypted
+- **Encryption Key Rotation**: Each build uses a different XOR key
+- **Sleep Timing Randomization**: Avoids detection by timing-based analysis
+- **Persistence Name Randomization**: Registry entries use different names per build
+
+### Static Linking Improvements
+
+- **No External Dependencies**: All required libraries are statically linked
+- **Reduced Detection Surface**: No suspicious DLL loading operations
+- **Improved Portability**: Works on systems without additional runtimes
 
 ## 🔧 Troubleshooting
 

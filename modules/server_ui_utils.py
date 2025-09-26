@@ -31,7 +31,7 @@ def print_banner(center=False):
 {Fore.RED}██╔══██╗ {Fore.WHITE}██╔══██║ {Fore.LIGHTBLUE_EX}   ██║    {Fore.RED}██╔══██║ {Fore.WHITE}   ██║    {Fore.LIGHTBLUE_EX}██║   ██║ {Fore.RED}██║   ██║ {Fore.WHITE}██║ {Fore.LIGHTBLUE_EX}██║     {Fore.RED}██║       {Fore.WHITE}██╔══╝  {Style.RESET_ALL}
 {Fore.RED}██║  ██║ {Fore.WHITE}██║  ██║ {Fore.LIGHTBLUE_EX}   ██║    {Fore.RED}██║  ██║ {Fore.WHITE}   ██║    {Fore.LIGHTBLUE_EX}╚██████╔╝ {Fore.RED}╚██████╔╝ {Fore.WHITE}██║ {Fore.LIGHTBLUE_EX}███████╗ {Fore.RED}███████╗ {Fore.WHITE}███████╗{Style.RESET_ALL}
 {Fore.RED}╚═╝  ╚═╝ {Fore.WHITE}╚═╝  ╚═╝ {Fore.LIGHTBLUE_EX}   ╚═╝    {Fore.RED}╚═╝  ╚═╝ {Fore.WHITE}   ╚═╝    {Fore.LIGHTBLUE_EX}╚═════╝  {Fore.RED} ╚═════╝  {Fore.WHITE}╚═╝ {Fore.LIGHTBLUE_EX}╚══════╝ {Fore.RED}╚══════╝  {Fore.WHITE}╚══════╝{Style.RESET_ALL}
-{Fore.CYAN}Remote Access Tool v1.5{Style.RESET_ALL}
+{Fore.CYAN}Remote Access Tool v1.6{Style.RESET_ALL}
 {Fore.YELLOW}Created by: CrypterENC{Style.RESET_ALL}
 """
     
@@ -43,7 +43,7 @@ def print_banner(center=False):
 {Fore.RED}██╔══█ {Fore.WHITE}██╔══█ {Fore.LIGHTBLUE_EX}   ██║   {Fore.RED}██╔══█ {Fore.WHITE}   ██║   {Fore.LIGHTBLUE_EX}██║   █ {Fore.RED}██║ ██ {Fore.WHITE}██ {Fore.LIGHTBLUE_EX}██║   {Fore.RED}██║   {Fore.WHITE}██╔══╝ {Style.RESET_ALL}
 {Fore.RED}██║  █ {Fore.WHITE}██║  █ {Fore.LIGHTBLUE_EX}   ██║   {Fore.RED}██║  █ {Fore.WHITE}   ██║   {Fore.LIGHTBLUE_EX}╚█████╔ {Fore.RED}╚████╔ {Fore.WHITE}██ {Fore.LIGHTBLUE_EX}█████ {Fore.RED}█████ {Fore.WHITE}███████{Style.RESET_ALL}
 {Fore.RED}╚═╝  ╚ {Fore.WHITE}╚═╝  ╚ {Fore.LIGHTBLUE_EX}   ╚═╝   {Fore.RED}╚═╝  ╚ {Fore.WHITE}   ╚═╝   {Fore.LIGHTBLUE_EX}╚════╝  {Fore.RED}╚═══╝  {Fore.WHITE}╚═ {Fore.LIGHTBLUE_EX}╚════ {Fore.RED}╚════ {Fore.WHITE}╚══════{Style.RESET_ALL}
-{Fore.CYAN}Remote Access Tool v1.5{Style.RESET_ALL}
+{Fore.CYAN}Remote Access Tool v1.6{Style.RESET_ALL}
 {Fore.YELLOW}Created by: CrypterENC{Style.RESET_ALL}
 """
 
@@ -56,7 +56,7 @@ def print_banner(center=False):
 {Fore.RED}██╔══██╗{Fore.WHITE}██╔══██║{Fore.LIGHTBLUE_EX}   ██║   {Fore.RED}██╔══██║{Fore.WHITE}   ██║   {Fore.LIGHTBLUE_EX}██║   ██║{Fore.RED}██║   ██║{Fore.WHITE}██║{Fore.LIGHTBLUE_EX}██║    {Fore.RED}██║      {Fore.WHITE}██╔══╝  {Style.RESET_ALL}
 {Fore.RED}██║  ██║{Fore.WHITE}██║  ██║{Fore.LIGHTBLUE_EX}   ██║   {Fore.RED}██║  ██║{Fore.WHITE}   ██║   {Fore.LIGHTBLUE_EX}╚██████╔╝{Fore.RED}╚██████╔╝{Fore.WHITE}██║{Fore.LIGHTBLUE_EX}███████╗{Fore.RED}███████╗{Fore.WHITE}███████╗{Style.RESET_ALL}
 {Fore.RED}╚═╝  ╚═╝{Fore.WHITE}╚═╝  ╚═╝{Fore.LIGHTBLUE_EX}   ╚═╝   {Fore.RED}╚═╝  ╚═╝{Fore.WHITE}   ╚═╝   {Fore.LIGHTBLUE_EX}╚═════╝ {Fore.RED} ╚═════╝ {Fore.WHITE}╚═╝{Fore.LIGHTBLUE_EX}╚══════╝{Fore.RED}╚══════╝ {Fore.WHITE}╚══════╝{Style.RESET_ALL}
-{Fore.CYAN}Remote Access Tool v1.5{Style.RESET_ALL}
+{Fore.CYAN}Remote Access Tool v1.6{Style.RESET_ALL}
 {Fore.YELLOW}Created by: CrypterENC{Style.RESET_ALL}
 """
     
@@ -64,7 +64,7 @@ def print_banner(center=False):
     small_banner = f"""
 {Fore.RED}R{Fore.WHITE}A{Fore.LIGHTBLUE_EX}T{Fore.RED}A{Fore.WHITE}T{Fore.LIGHTBLUE_EX}O{Fore.RED}U{Fore.WHITE}I{Fore.LIGHTBLUE_EX}L{Fore.RED}L{Fore.WHITE}E{Style.RESET_ALL}
 
-{Fore.CYAN}Remote Access Tool v1.5{Style.RESET_ALL}
+{Fore.CYAN}Remote Access Tool v1.6{Style.RESET_ALL}
 {Fore.YELLOW}Created by: CrypterENC{Style.RESET_ALL}
 """
     

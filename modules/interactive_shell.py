@@ -1,10 +1,14 @@
 import sys
 import time
 import socket
-import select
 import threading
+import platform
 import colorama # type: ignore
 from colorama import Fore, Style, Back # type: ignore
+
+# Windows-specific imports
+if platform.system() == "Windows":
+    import msvcrt
 
 def interactive_shell_session(client_socket, buffer_size=1024):
     """
@@ -76,8 +80,7 @@ def interactive_shell_session(client_socket, buffer_size=1024):
         client_socket.settimeout(None)
         return False
     
-    # Set socket to non-blocking mode for interactive use
-    client_socket.setblocking(False)
+    # Keep socket in blocking mode but use timeouts for better control
     
     # Create a thread to read from the socket and print to console
     stop_thread = threading.Event()
@@ -86,30 +89,31 @@ def interactive_shell_session(client_socket, buffer_size=1024):
         """Thread function to receive and display shell output"""
         while not stop_thread.is_set():
             try:
-                # Use select to check if there's data to read without blocking
-                readable, _, _ = select.select([client_socket], [], [], 0.1)
+                # Set a short timeout to check for data without blocking indefinitely
+                client_socket.settimeout(0.1)
+                data = client_socket.recv(buffer_size).decode('utf-8', errors='replace')
                 
-                if client_socket in readable:
-                    data = client_socket.recv(buffer_size).decode('utf-8', errors='replace')
+                if not data:  # Connection closed
+                    print(f"{Fore.RED}[!] Connection closed by client{Style.RESET_ALL}")
+                    stop_thread.set()
+                    break
                     
-                    if not data:  # Connection closed
-                        print(f"{Fore.RED}[!] Connection closed by client{Style.RESET_ALL}")
-                        stop_thread.set()
-                        break
-                        
-                    # Check for shell end marker
-                    if "##SHELL_SESSION_ENDED##" in data:
-                        data = data.replace("##SHELL_SESSION_ENDED##", "")
-                        if data.strip():
-                            print(data, end='')
-                        print(f"{Fore.YELLOW}[*] Shell session ended by remote host{Style.RESET_ALL}")
-                        stop_thread.set()
-                        break
-                        
-                    # Print received data
-                    print(data, end='')
-                    sys.stdout.flush()
+                # Check for shell end marker
+                if "##SHELL_SESSION_ENDED##" in data:
+                    data = data.replace("##SHELL_SESSION_ENDED##", "")
+                    if data.strip():
+                        print(data, end='')
+                    print(f"{Fore.YELLOW}[*] Shell session ended by remote host{Style.RESET_ALL}")
+                    stop_thread.set()
+                    break
                     
+                # Print received data
+                print(data, end='')
+                sys.stdout.flush()
+                    
+            except socket.timeout:
+                # Timeout is expected, continue checking
+                continue
             except Exception as e:
                 if not stop_thread.is_set():  # Only print error if we're not already stopping
                     print(f"{Fore.RED}[!] Error receiving shell output: {str(e)}{Style.RESET_ALL}")
@@ -125,23 +129,46 @@ def interactive_shell_session(client_socket, buffer_size=1024):
     try:
         while not stop_thread.is_set():
             try:
-                # Use select to check if stdin has data without blocking
-                readable, _, _ = select.select([sys.stdin], [], [], 0.1)
-                
-                if sys.stdin in readable:
-                    command = input()
-                    
-                    # Check for exit command
-                    if command.strip().lower() == "exit_shell":
-                        print(f"{Fore.YELLOW}[*] Exiting shell session...{Style.RESET_ALL}")
-                        client_socket.send("exit_shell".encode())
-                        # Wait for confirmation of exit
-                        time.sleep(1.0)
-                        stop_thread.set()
-                        break
+                # Platform-specific input handling
+                if platform.system() == "Windows":
+                    # On Windows, use msvcrt for non-blocking input
+                    if msvcrt.kbhit():
+                        command = input()
                         
-                    # Send command to client
-                    client_socket.send(command.encode())
+                        # Check for exit command
+                        if command.strip().lower() == "exit_shell":
+                            print(f"{Fore.YELLOW}[*] Exiting shell session...{Style.RESET_ALL}")
+                            client_socket.send("exit_shell".encode())
+                            # Wait for confirmation of exit
+                            time.sleep(1.0)
+                            stop_thread.set()
+                            break
+                            
+                        # Send command to client (add newline for proper command execution)
+                        client_socket.send((command + "\r\n").encode())
+                    else:
+                        # Small sleep to prevent busy waiting
+                        time.sleep(0.1)
+                else:
+                    # On Unix-like systems, use select
+                    import select
+                    readable, _, _ = select.select([sys.stdin], [], [], 0.1)
+                    
+                    if sys.stdin in readable:
+                        command = input()
+                        
+                        # Check for exit command
+                        if command.strip().lower() == "exit_shell":
+                            print(f"{Fore.YELLOW}[*] Exiting shell session...{Style.RESET_ALL}")
+                            client_socket.send("exit_shell".encode())
+                            # Wait for confirmation of exit
+                            time.sleep(1.0)
+                            stop_thread.set()
+                            break
+                            
+                        # Send command to client (add newline for proper command execution)
+                        client_socket.send((command + "\n").encode())
+                        
             except KeyboardInterrupt:
                 print(f"{Fore.YELLOW}[*] Shell session terminated by user{Style.RESET_ALL}")
                 client_socket.send("exit_shell".encode())
@@ -155,7 +182,6 @@ def interactive_shell_session(client_socket, buffer_size=1024):
         # Clean up
         stop_thread.set()
         receiver_thread.join(timeout=2.0)
-        client_socket.setblocking(True)
         
         # Wait for shell end marker if not already received
         try:
