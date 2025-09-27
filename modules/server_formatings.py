@@ -293,6 +293,8 @@ def format_client_command_help():
         ("shell", "Start interactive real-time shell session"),
         ("start_screen_share", "Start real-time screen sharing (10 FPS JPEG stream)"),
         ("stop_screen_share", "Stop active screen sharing session"),
+        ("upload_file <local_path>", "Upload a file from server to client"),
+        ("download_file <remote_path>", "Download a file from client to server"),
     ]
     
     # Group commands by category
@@ -302,6 +304,7 @@ def format_client_command_help():
         "Information": ["sysinfo", "installed_software", "netinfo"],
         "Process Management": ["list_processes", "search_process", "terminate_process", "system_logs"],
         "Actions": ["screenshot", "launch_app", "send_keys", "shell", "start_screen_share", "stop_screen_share"],
+        "File Transfer": ["upload_file", "download_file"],
     }
     
     # Display commands by category

@@ -68,6 +68,11 @@ Client executable saved to: my_client.exe
 ### Core Features
 - **Interactive Shell**: Real-time command shell access
 - **Screen Sharing**: Live screen monitoring at 10 FPS with JPEG compression
+- **Enhanced File Transfer**: Reliable bidirectional file transfer system
+  * Clean and consistent progress box UI
+  * Desktop-aware file placement with fallback
+  * Automatic directory creation
+  * Efficient socket buffer management
 - **Process Control**: List, search, and terminate processes
 - **System Information**: Detailed hardware and software information
 - **Network Monitoring**: Connection details and active network interfaces
@@ -109,10 +114,17 @@ For Windows users, you may need to install MinGW-w64 if not already installed:
 - **Added**: Build signature generation
 - **Added**: Interactive shell with full terminal emulation
 - **Added**: Screen sharing capability (10 FPS with JPEG compression)
+- **Added**: Enhanced file transfer system with visual progress
+  * Clean and consistent progress box UI
+  * Desktop-aware file placement with fallback
+  * Automatic directory creation
+  * Efficient socket buffer management
 - **Added**: Console/Hidden mode selection
 - **Added**: Static linking improvements for better portability
 - **Added**: Persistence name randomization
-- **Fixed**: Various stability issues with large file transfers
+- **Fixed**: Binary data handling in file transfers
+- **Fixed**: Socket buffer management for large files
+- **Fixed**: Directory creation issues in file transfers
 
 ### v1.5
 - **Added**: Persistence mechanism via registry

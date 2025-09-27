@@ -157,6 +157,11 @@ Verify your installation with these steps:
 - **Persistent Connection**: Automatic reconnection if connection is lost
 - **Interactive Shell**: Real-time command shell access with full terminal emulation
 - **Screen Sharing**: Live screen monitoring at 10 FPS with JPEG compression
+- **Enhanced File Transfer**: Reliable bidirectional file transfer with progress tracking
+  * Clean and consistent progress box UI
+  * Desktop-aware file placement with fallback
+  * Automatic directory creation
+  * Efficient socket buffer management
 - **System Information Collection**: Hardware, software, and network details
 - **Process Management**: List, search, and terminate processes
 - **Screenshot Capability**: Capture screen content remotely
@@ -211,12 +216,11 @@ Select `options` from the main menu to change settings interactively:
 - Maximum clients
 - UI refresh rate
 - Notification settings
-
 > **Important**: After changing settings in the options menu, you must stop and restart the server for changes to take effect.
 
 ## 🔍 RAT Server Commands
 
-### Server Main Menu Commands
+### Server Control Commands
 
 | Command       | Description                      |
 | ------------- | -------------------------------- |
@@ -228,6 +232,13 @@ Select `options` from the main menu to change settings interactively:
 | `options`     | Configure server options         |
 | `help`        | Display help information         |
 | `quit`        | Exit the program                 |
+
+### File Transfer Commands
+
+| Command | Description | Features |
+| ------- | ----------- | -------- |
+| `upload_file <local_path>` | Upload file from server to client | • Visual progress tracking<br>• Desktop-aware placement<br>• Automatic directory creation<br>• Fallback to current directory |
+| `download_file <remote_path>` | Download file from client to server | • Visual progress tracking<br>• Automatic downloads folder<br>• Progress percentage display<br>• Clean box UI |
 
 ### Client Mode Commands
 

