@@ -1,6 +1,2 @@
 {
-    "host": "192.168.1.12",
-    "port": 1234,
-    "buffer_size": 1024,
-    "max_clients": 10
 }
