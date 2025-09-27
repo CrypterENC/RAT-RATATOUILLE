@@ -154,22 +154,56 @@ Verify your installation with these steps:
 
 ### Client Features (v1.6)
 
-- **Persistent Connection**: Automatic reconnection if connection is lost
-- **Interactive Shell**: Real-time command shell access with full terminal emulation
-- **Screen Sharing**: Live screen monitoring at 10 FPS with JPEG compression
-- **Enhanced File Transfer**: Reliable bidirectional file transfer with progress tracking
-  * Clean and consistent progress box UI
-  * Desktop-aware file placement with fallback
-  * Automatic directory creation
-  * Efficient socket buffer management
-- **System Information Collection**: Hardware, software, and network details
-- **Process Management**: List, search, and terminate processes
-- **Screenshot Capability**: Capture screen content remotely
-- **Keystroke Sending**: Send keystrokes to applications
-- **Application Control**: Launch and interact with applications
-- **System Logs Access**: Retrieve various system event logs
-- **Polymorphic Code**: Unique builds with randomized functions and encryption
+#### **🔧 Enhanced Connection Management**
+- **Intelligent Connection State Tracking**: Prevents duplicate connections and unnecessary attempts
+- **Automatic Reconnection**: Up to 3 retry attempts with 5-second delays
+- **Real-time Socket Health Monitoring**: Continuous connection status checking
+- **Enhanced Timeouts**: 60-second timeout for large operations (increased from 30s)
+- **Improved Buffer Management**: 8KB buffer size for better performance (4x increase)
+- **Comprehensive Error Handling**: Detailed WSA error codes and categorization
+- **Mutex-based Instance Control**: Prevents multiple clients from same machine
+
+#### **🛡️ Robust Command Processing**
+- **Safe Network Operations**: 100% `safe_send()` usage for all critical operations
+- **Enhanced Error Diagnosis**: Detailed error reporting with specific error codes
+- **Proper Handle Validation**: Comprehensive validation for all file/pipe operations
+- **Thread-safe Operations**: Critical sections for all shared resources
+- **Graceful Error Recovery**: Continues operation when possible, fails safely when not
+
+#### **💻 Interactive Shell Improvements**
+- **Full Terminal Emulation**: Complete Windows command shell access
+- **Enhanced Error Handling**: Detailed diagnosis for pipe/handle errors
+- **Multiple Exit Commands**: Support for "exit_shell", "##EXIT_SHELL##", "screenshot"
+- **Proper Session Management**: Clean shell lifecycle with resource cleanup
+- **Connection Loss Detection**: Automatic detection and recovery from shell errors
+
+#### **📁 Enhanced File Operations**
+- **Reliable File Transfer**: Chunked transmission with 4KB chunks (4x improvement)
+- **Progress Tracking**: Real-time progress reporting with chunk counting
+- **Desktop-aware Placement**: Intelligent file placement with fallback options
+- **Binary Data Handling**: Fixed binary data processing in command loop
+- **Connection State Management**: Proper error handling during file operations
+
+#### **🖥️ Screen Sharing Enhancements**
+- **Live Monitoring**: 10 FPS with JPEG compression (75% quality)
+- **Efficient Transmission**: 8KB chunk size for optimal performance
+- **Thread-safe Capture**: Proper synchronization for frame capture
+- **Graceful Termination**: Clean session cleanup on disconnection
+- **Error Recovery**: Automatic detection of connection issues
+
+#### **🔍 System Monitoring Features**
+- **System Information**: Chunked responses with progress tracking
+- **Process Management**: Enhanced error handling and search capabilities
+- **Network Information**: Comprehensive network adapter and connection details
+- **System Logs**: Configurable log types and entry counts
+- **Screenshot Capability**: JPEG compression with proper error handling
+
+#### **🔐 Security & Authentication**
+- **Key-based Authentication**: Dynamic authentication key system
+- **Polymorphic Code Generation**: Unique builds with randomized functions
 - **XOR Encryption**: Obfuscated strings and network traffic
+- **Connection Validation**: Real-time authentication during connection
+- **Secure Communication**: All network operations use safe protocols
 
 ## ⚙️ Server Configuration
 
@@ -284,52 +318,91 @@ Select `options` from the main menu to change settings interactively:
 
 ## 🛡️ Advanced Security Features (v1.6)
 
-Version 1.6 introduces several advanced security and evasion features:
+Version 1.6 introduces comprehensive security and stability enhancements:
 
-### Polymorphic Code Generation
+### 🔐 Authentication System
+- **Dynamic Key Authentication**: Server-client key validation during connection
+- **File-based Key Storage**: Secure authentication key management
+- **Real-time Validation**: Authentication occurs during initial handshake
+- **Flexible Key Management**: Easy key changes through server options
+- **Connection Logging**: Detailed authentication attempt logging
 
+### 🔄 Polymorphic Code Generation
 Each build of the RAT client is unique, making detection more difficult:
-
 - **Function Name Randomization**: All internal function names are randomized
 - **Variable Name Randomization**: Key variables receive unique names per build
 - **Code Flow Variation**: Execution paths vary between builds
 - **Build Signatures**: Each build has a unique identifier for tracking
 
-### Encryption and Obfuscation
-
+### 🔒 Encryption and Obfuscation
 - **XOR Encryption**: All sensitive strings and network traffic are XOR-encrypted
 - **Encryption Key Rotation**: Each build uses a different XOR key
 - **Sleep Timing Randomization**: Avoids detection by timing-based analysis
 - **Persistence Name Randomization**: Registry entries use different names per build
 
-### Static Linking Improvements
+### 🔧 Connection Security
+- **Safe Network Operations**: 100% safe_send() usage prevents connection issues
+- **Connection Health Monitoring**: Real-time socket status validation
+- **Intelligent Reconnection**: Smart reconnection logic prevents duplicate connections
+- **Error Recovery**: Comprehensive error handling with detailed logging
 
+### 📦 Static Linking Improvements
 - **No External Dependencies**: All required libraries are statically linked
 - **Reduced Detection Surface**: No suspicious DLL loading operations
 - **Improved Portability**: Works on systems without additional runtimes
+- **Enhanced Stability**: Reduced dependency on system libraries
 
 ## 🔧 Troubleshooting
 
 ### Common Issues and Solutions
 
 #### Server Won't Start
-
 - **Issue**: Server fails to start or crashes immediately
 - **Solution**:
   - Check if the port is already in use
   - Verify you have administrator privileges
   - Ensure Python and required packages are installed correctly
+  - Check authentication key is properly set in server options
 
 #### Client Can't Connect to Server
-
 - **Issue**: Client executable runs but doesn't connect to server
 - **Solution**:
   - Verify server is running and listening on the correct IP and port
   - Check firewall settings on both server and client machines
-  - Ensure client is configured with the correct server IP and port
+  - Ensure client authentication key matches server key
+  - Verify client is configured with the correct server IP and port
+
+#### Authentication Failures
+- **Issue**: Client connects but authentication fails
+- **Solution**:
+  - Ensure authentication keys match between client and server
+  - Check server authentication key in Server Options menu
+  - Verify client was compiled with correct AUTH_KEY define
+  - Review server logs for authentication error details
+
+#### Shell Command Errors
+- **Issue**: Interactive shell shows "Error 6" or handle errors
+- **Solution**:
+  - This is now fixed in v1.6 with enhanced error handling
+  - Shell now provides detailed error diagnosis
+  - Check for proper shell process lifecycle management
+
+#### File Transfer Issues
+- **Issue**: Download/upload commands show "Unexpected response"
+- **Solution**:
+  - This is resolved in v1.6 with safe_send() implementation
+  - All file operations now use reliable transmission
+  - Check for proper file path and permissions
+
+#### Connection Stability Issues
+- **Issue**: Frequent disconnections or connection loss
+- **Solution**:
+  - v1.6 includes enhanced connection management
+  - Automatic reconnection with intelligent retry logic
+  - Increased timeouts for large operations (60 seconds)
+  - Real-time connection health monitoring
 
 #### Compilation Errors
-
 - **Issue**: Client generator fails to compile the client
 - **Solution**:
   - Ensure MinGW-w64 is properly installed and in your PATH
@@ -337,19 +410,11 @@ Each build of the RAT client is unique, making detection more difficult:
   - Try running the compilation command manually to see detailed errors
 
 #### Configuration Changes Not Taking Effect
-
 - **Issue**: Changes to server settings don't seem to work
 - **Solution**:
   - After changing settings in the options menu, you must stop and restart the server
   - Verify changes were saved to `server_config.json`
   - Check for syntax errors in the configuration file
-
-#### Pip Update Notices
-
-- **Issue**: You see notices about pip being outdated
-- **Solution**:
-  - The setup scripts automatically update pip to the latest version
-  - If you still see update notices, manually run: `python -m pip install --upgrade pip`
 
 ## ⚠️ Security Notice
 

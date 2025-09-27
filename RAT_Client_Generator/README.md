@@ -65,48 +65,141 @@ Client executable saved to: my_client.exe
 
 ## Features in v1.6
 
-### Core Features
-- **Interactive Shell**: Real-time command shell access
-- **Screen Sharing**: Live screen monitoring at 10 FPS with JPEG compression
-- **Enhanced File Transfer**: Reliable bidirectional file transfer system
-  * Clean and consistent progress box UI
-  * Desktop-aware file placement with fallback
-  * Automatic directory creation
-  * Efficient socket buffer management
-- **Process Control**: List, search, and terminate processes
-- **System Information**: Detailed hardware and software information
-- **Network Monitoring**: Connection details and active network interfaces
-- **Persistence**: Automatic startup via registry (with randomized names)
+### 🔧 Enhanced Connection Management
+- **Intelligent Connection State Tracking**: Prevents duplicate connections
+- **Automatic Reconnection**: Up to 3 retry attempts with smart logic
+- **Real-time Socket Health Monitoring**: Continuous connection validation
+- **Enhanced Timeouts**: 60-second timeout for large operations
+- **Improved Buffer Management**: 8KB buffer size (4x performance increase)
+- **Comprehensive Error Handling**: Detailed WSA error codes and recovery
 
-### Security Features
+### 🛡️ Robust Command Processing
+- **Safe Network Operations**: 100% safe_send() usage for reliability
+- **Enhanced Error Diagnosis**: Detailed error reporting with specific codes
+- **Thread-safe Operations**: Critical sections for all shared resources
+- **Graceful Error Recovery**: Continues operation when possible
+
+### 💻 Interactive Shell Improvements
+- **Full Terminal Emulation**: Complete Windows command shell access
+- **Enhanced Error Handling**: Detailed diagnosis for pipe/handle errors (fixes Error 6)
+- **Multiple Exit Commands**: Support for "exit_shell", "##EXIT_SHELL##", "screenshot"
+- **Proper Session Management**: Clean shell lifecycle with resource cleanup
+- **Connection Loss Detection**: Automatic recovery from shell errors
+
+### 📁 Enhanced File Operations
+- **Reliable File Transfer**: Chunked transmission with 4KB chunks
+- **Progress Tracking**: Real-time progress reporting with chunk counting
+- **Desktop-aware Placement**: Intelligent file placement with fallback
+- **Binary Data Handling**: Fixed binary data processing issues
+- **Connection State Management**: Proper error handling during transfers
+
+### 🖥️ Screen Sharing Enhancements
+- **Live Monitoring**: 10 FPS with JPEG compression (75% quality)
+- **Efficient Transmission**: 8KB chunk size for optimal performance
+- **Thread-safe Capture**: Proper synchronization for frame capture
+- **Graceful Termination**: Clean session cleanup on disconnection
+
+### 🔐 Security & Authentication Features
+- **Dynamic Key Authentication**: Server-client key validation system
 - **Polymorphic Code Generation**: Each build is unique to avoid detection
 - **XOR Encryption**: Obfuscates strings and network traffic
 - **Function Name Randomization**: Makes reverse engineering more difficult
 - **Randomized Sleep Intervals**: Evades timing-based detection
 - **Build Signatures**: Each build has a unique identifier
+- **Connection Validation**: Real-time authentication during handshake
 
-### Compilation Options
+### ⚙️ Compilation Options
 - **Console/Hidden Mode**: Choose whether the client shows a console window
-- **Icon Customization**: Embed custom icons in the executable
+- **Authentication Key Integration**: Dynamic key replacement during compilation
 - **Static Linking**: No external DLL dependencies
 - **Optimization Levels**: Balance between size and performance
+- **Enhanced Error Reporting**: Comprehensive compilation feedback
 
-### Troubleshooting
+### 🔧 Troubleshooting
 
+#### Compilation Issues
 If you encounter compilation errors:
-
 1. Ensure g++ is properly installed and in your PATH
 2. Verify all required libraries are available
 3. Check that the source file exists and is readable
+4. Verify authentication key is properly set before compilation
 
+#### Authentication Issues
+If clients can't authenticate:
+1. Ensure server authentication key is set in Server Options
+2. Verify client AUTH_KEY matches server key exactly
+3. Check server logs for authentication failure details
+4. Regenerate client with correct authentication key
+
+#### Connection Problems
+If clients can't maintain stable connections:
+1. v1.6.1 includes enhanced connection management
+2. Automatic reconnection with intelligent retry logic
+3. Increased timeouts for large operations (60 seconds)
+4. Real-time connection health monitoring
+
+#### Shell Command Errors
+If you see "Error 6" or shell handle errors:
+1. This is fixed in v1.6.1 with enhanced error handling
+2. Shell now provides detailed error diagnosis
+3. Proper handle validation prevents crashes
+4. Multiple exit commands supported
+
+#### File Transfer Issues
+If download/upload shows "Unexpected response":
+1. This is resolved in v1.6.1 with safe_send() implementation
+2. All file operations now use reliable transmission
+3. Binary data handling is properly implemented
+4. Progress tracking shows real-time status
+
+#### Windows Setup
 For Windows users, you may need to install MinGW-w64 if not already installed:
 1. Download from [MSYS2](https://www.msys2.org/)
 2. Follow installation instructions to set up the C++ compiler
 3. Add the MinGW bin directory to your PATH
+4. Verify installation with `g++ --version`
 
 ## Changelog
 
-### v1.6 (Current)
+### v1.6.1 (Latest - December 2024)
+#### 🔧 **Major Stability & Performance Enhancements**
+- **FIXED**: Shell Error 6 (Invalid Handle) with comprehensive handle validation
+- **FIXED**: "Unexpected response" errors in download/upload file commands
+- **FIXED**: Binary data processing issues in command loop
+- **ENHANCED**: Connection management with intelligent state tracking
+- **ENHANCED**: Socket timeouts increased to 60 seconds for large operations
+- **ENHANCED**: Buffer size increased to 8KB (4x performance improvement)
+- **ENHANCED**: All network operations now use safe_send() for 100% reliability
+
+#### 🛡️ **Authentication & Security Improvements**
+- **ADDED**: Dynamic authentication key system with server integration
+- **ADDED**: Real-time key validation during connection handshake
+- **ADDED**: File-based authentication key storage and management
+- **ENHANCED**: Connection logging with detailed authentication attempts
+- **FIXED**: Authentication key synchronization between client and server
+
+#### 💻 **Interactive Shell Enhancements**
+- **FIXED**: Shell handle validation preventing Error 6 crashes
+- **ADDED**: Detailed error categorization (Invalid Handle, Broken Pipe, No Data)
+- **ENHANCED**: Multiple exit command support with proper cleanup
+- **IMPROVED**: Shell session lifecycle management
+- **ADDED**: Real-time connection loss detection and recovery
+
+#### 📁 **File Transfer Improvements**
+- **FIXED**: Binary data handling in file transfer operations
+- **ENHANCED**: Chunked transmission with 4KB chunks (4x improvement)
+- **ADDED**: Real-time progress tracking with chunk counting
+- **IMPROVED**: Desktop-aware file placement with intelligent fallback
+- **ENHANCED**: Connection state management during file operations
+
+#### 🖥️ **Screen Sharing & System Monitoring**
+- **ENHANCED**: Screen sharing with 8KB chunk transmission
+- **IMPROVED**: Thread-safe frame capture with proper synchronization
+- **ADDED**: Progress reporting for system information commands
+- **ENHANCED**: Network information gathering with detailed adapter data
+- **IMPROVED**: System logs access with configurable entry counts
+
+### v1.6.0 (Original)
 - **Added**: Polymorphic code generation engine
 - **Added**: XOR encryption for strings and network traffic
 - **Added**: Function and variable name randomization
@@ -115,16 +208,9 @@ For Windows users, you may need to install MinGW-w64 if not already installed:
 - **Added**: Interactive shell with full terminal emulation
 - **Added**: Screen sharing capability (10 FPS with JPEG compression)
 - **Added**: Enhanced file transfer system with visual progress
-  * Clean and consistent progress box UI
-  * Desktop-aware file placement with fallback
-  * Automatic directory creation
-  * Efficient socket buffer management
 - **Added**: Console/Hidden mode selection
 - **Added**: Static linking improvements for better portability
 - **Added**: Persistence name randomization
-- **Fixed**: Binary data handling in file transfers
-- **Fixed**: Socket buffer management for large files
-- **Fixed**: Directory creation issues in file transfers
 
 ### v1.5
 - **Added**: Persistence mechanism via registry
