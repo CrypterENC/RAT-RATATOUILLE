@@ -17,8 +17,21 @@ def list_clients(client_sockets, client_info=None):
                 # Use stored client info if available, otherwise fallback to getpeername
                 if client_info and client_info[i]:
                     public_ip = client_info[i]['public_ip']
-                    # Show public IP prominently
-                    addr_str = f"{public_ip} (Public)"
+                    status = client_info[i].get('ip_detection_status', 'unknown')
+                    
+                    if status == 'completed' and public_ip != client_info[i]['connection_ip']:
+                        # Successfully detected different public IP
+                        addr_str = f"{public_ip} (Public)"
+                    elif status == 'pending':
+                        # Still detecting
+                        addr_str = f"{public_ip} (Detecting...)"
+                    elif status == 'failed':
+                        # Detection failed, show connection IP
+                        addr_str = f"{public_ip} (Direct)"
+                    else:
+                        # Default case
+                        addr_str = f"{public_ip} (Public)"
+                    
                     if len(addr_str) > 37:
                         addr_str = addr_str[:34] + "..."
                 else:

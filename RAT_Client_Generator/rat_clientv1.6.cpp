@@ -766,39 +766,78 @@ std::string get_local_ip() {
     return std::string(inet_ntoa(addr));
 }
 
-// Get public IP address by connecting to a remote server
+// Get public IP address using multiple IP detection services
 std::string get_public_ip() {
-    try {
-        SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
-        if (sock == INVALID_SOCKET) {
-            return "Unknown";
-        }
-        
-        // Connect to a public service to determine our public IP
-        struct sockaddr_in server_addr;
-        server_addr.sin_family = AF_INET;
-        server_addr.sin_port = htons(80);
-        server_addr.sin_addr.s_addr = inet_addr("8.8.8.8"); // Google DNS
-        
-        // Set a short timeout
-        DWORD timeout = 3000; // 3 seconds
-        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
-        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char*)&timeout, sizeof(timeout));
-        
-        if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) == 0) {
-            struct sockaddr_in local_addr;
-            int addr_len = sizeof(local_addr);
-            if (getsockname(sock, (struct sockaddr*)&local_addr, &addr_len) == 0) {
-                std::string public_ip = inet_ntoa(local_addr.sin_addr);
+    const char* ip_services[] = {
+        "api.ipify.org",
+        "ifconfig.me",
+        "icanhazip.com",
+        "ident.me",
+        "ipecho.net"
+    };
+    const int num_services = sizeof(ip_services) / sizeof(ip_services[0]);
+    
+    for (int i = 0; i < num_services; i++) {
+        try {
+            SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+            if (sock == INVALID_SOCKET) continue;
+            
+            // Resolve hostname
+            struct hostent* host = gethostbyname(ip_services[i]);
+            if (!host) {
                 closesocket(sock);
-                return public_ip;
+                continue;
             }
+            
+            struct sockaddr_in server_addr;
+            server_addr.sin_family = AF_INET;
+            server_addr.sin_port = htons(80);
+            server_addr.sin_addr.s_addr = *(unsigned long*)host->h_addr;
+            
+            // Set timeout
+            DWORD timeout = 2000; // 2 seconds (reduced for faster response)
+            setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
+            setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char*)&timeout, sizeof(timeout));
+            
+            if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) == 0) {
+                // Send HTTP GET request
+                std::string request = "GET / HTTP/1.1\r\n";
+                request += "Host: ";
+                request += ip_services[i];
+                request += "\r\n";
+                request += "User-Agent: Mozilla/5.0\r\n";
+                request += "Accept: text/plain\r\n";
+                request += "Connection: close\r\n\r\n";
+                
+                if (send(sock, request.c_str(), request.length(), 0) != SOCKET_ERROR) {
+                    char buffer[1024] = {0};
+                    int bytes_received = recv(sock, buffer, sizeof(buffer) - 1, 0);
+                    
+                    if (bytes_received > 0) {
+                        std::string response(buffer);
+                        // Find the IP in the response (usually at the end after headers)
+                        size_t pos = response.find("\r\n\r\n");
+                        if (pos != std::string::npos) {
+                            std::string ip = response.substr(pos + 4);
+                            // Clean up the IP (remove any whitespace/newlines)
+                            ip.erase(std::remove_if(ip.begin(), ip.end(), isspace), ip.end());
+                            // Verify it looks like an IP
+                            if (ip.length() > 0 && ip.length() < 16 && ip.find_first_not_of("0123456789.") == std::string::npos) {
+                                closesocket(sock);
+                                return ip;
+                            }
+                        }
+                    }
+                }
+            }
+            closesocket(sock);
+        } catch (...) {
+            // Try next service if this one fails
+            continue;
         }
-        closesocket(sock);
-    } catch (...) {
-        // Fallback to local IP if public IP detection fails
     }
     
+    // If all services fail, fallback to local IP
     return get_local_ip();
 }
 
@@ -3540,7 +3579,17 @@ int main()
             {
                 std::cout << "Getting public IP information..." << std::endl;
                 std::string local_ip = get_local_ip();
-                std::string public_ip = get_public_ip();
+                std::string public_ip;
+                
+                // Try to get public IP with timeout protection
+                try {
+                    public_ip = get_public_ip();
+                    if (public_ip.empty() || public_ip == "127.0.0.1") {
+                        public_ip = "Detection Failed";
+                    }
+                } catch (...) {
+                    public_ip = "Detection Failed";
+                }
                 
                 response = "Public IP: " + public_ip + "\n";
                 response += "Local IP: " + local_ip;
