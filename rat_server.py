@@ -245,7 +245,7 @@ def stop_server():
 
 def accept_connections(server_socket):
     """Accept new client connections"""
-    global running, server_running
+    global running, server_running, AUTH_KEY
 
     while running and server_running:
         try:
@@ -267,19 +267,31 @@ def accept_connections(server_socket):
                 # Extract and validate authentication key
                 if ":" in validation_response:
                     client_key = validation_response.split(":", 1)[1]
-                    # Use global AUTH_KEY directly to avoid function call issues
-                    global AUTH_KEY
-                    print(f"[DEBUG] Client key: '{client_key}', Server key: '{AUTH_KEY}'")
                     if AUTH_KEY is None:
                         print(f"❌ Server authentication key not set! Use 'Set Auth Key' option first.")
+                        try:
+                            client.send("AUTH_FAILED".encode())
+                        except:
+                            pass
                         client.close()
                         continue
                     elif client_key != AUTH_KEY:
                         print(f"❌ Authentication failed from {addr[0]}:{addr[1]} - invalid key: '{client_key}' (expected: '{AUTH_KEY}')")
+                        try:
+                            client.send("AUTH_FAILED".encode())
+                        except:
+                            pass
                         client.close()
                         continue
                     else:
                         print(f"✅ Client authenticated successfully from {addr[0]}:{addr[1]} with key: '{client_key}'")
+                        # Send authentication success confirmation
+                        try:
+                            client.send("AUTH_SUCCESS".encode())
+                        except Exception as e:
+                            print(f"❌ Failed to send auth success confirmation: {e}")
+                            client.close()
+                            continue
                 else:
                     print(f"❌ No authentication key provided by client from {addr[0]}:{addr[1]}")
                     client.close()

