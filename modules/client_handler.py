@@ -242,21 +242,32 @@ def client_command_mode(active_client, client_sockets, server_running, print_ban
                     try:
                         response = client_sockets[active_client].recv(buffer_size).decode('utf-8', errors='replace')
                         if "successfully" in response.lower():
-                            print(f"{Fore.GREEN}✓ SOCKS5 Proxy Status:{Style.RESET_ALL}")
+                            print(f"{Fore.GREEN}✓ SOCKS5 Proxy Started Successfully!{Style.RESET_ALL}")
                             print(f"{Fore.WHITE}{response}{Style.RESET_ALL}")
                             
-                            # Extract port information for easy reference
-                            if "port" in response.lower():
-                                lines = response.split('\n')
-                                for line in lines:
-                                    if "proxy address:" in line.lower():
-                                        proxy_addr = line.split(': ')[-1].strip()
-                                        print(f"\n{Fore.CYAN}╔{'═' * 60}╗{Style.RESET_ALL}")
-                                        print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.WHITE}Configure your applications to use SOCKS5 proxy:{Style.RESET_ALL}{' ' * 8} {Fore.CYAN}║{Style.RESET_ALL}")
-                                        print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.GREEN}{proxy_addr}{' ' * (57 - len(proxy_addr))}{Fore.CYAN}║{Style.RESET_ALL}")
-                                        print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.YELLOW}No authentication required{Style.RESET_ALL}{' ' * 33} {Fore.CYAN}║{Style.RESET_ALL}")
-                                        print(f"{Fore.CYAN}╚{'═' * 60}╝{Style.RESET_ALL}")
-                                        break
+                            # Create a beautiful configuration display
+                            print(f"\n{Fore.CYAN}╔{'═' * 70}╗{Style.RESET_ALL}")
+                            print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.WHITE}{Style.BRIGHT}SOCKS5 PROXY CONFIGURATION GUIDE{Style.RESET_ALL}{' ' * 35} {Fore.CYAN}║{Style.RESET_ALL}")
+                            print(f"{Fore.CYAN}╠{'═' * 70}╣{Style.RESET_ALL}")
+                            print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.YELLOW}Choose the appropriate address based on your setup:{Style.RESET_ALL}{' ' * 18} {Fore.CYAN}║{Style.RESET_ALL}")
+                            print(f"{Fore.CYAN}║{Style.RESET_ALL}{' ' * 70} {Fore.CYAN}║{Style.RESET_ALL}")
+                            
+                            # Extract different IP addresses from response
+                            lines = response.split('\n')
+                            for line in lines:
+                                if "LAN Access:" in line:
+                                    lan_addr = line.split(': ')[-1].strip()
+                                    print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.GREEN}LAN/Local Network:{Style.RESET_ALL} {Fore.WHITE}{lan_addr}{' ' * (47 - len(lan_addr))}{Fore.CYAN}║{Style.RESET_ALL}")
+                                elif "WAN Access:" in line:
+                                    wan_addr = line.split(': ')[-1].strip()
+                                    print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.MAGENTA}WAN/Remote Access:{Style.RESET_ALL} {Fore.WHITE}{wan_addr}{' ' * (47 - len(wan_addr))}{Fore.CYAN}║{Style.RESET_ALL}")
+                                elif "Localhost:" in line:
+                                    local_addr = line.split(': ')[-1].strip()
+                                    print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.BLUE}Localhost/Testing:{Style.RESET_ALL} {Fore.WHITE}{local_addr}{' ' * (47 - len(local_addr))}{Fore.CYAN}║{Style.RESET_ALL}")
+                            
+                            print(f"{Fore.CYAN}║{Style.RESET_ALL}{' ' * 70} {Fore.CYAN}║{Style.RESET_ALL}")
+                            print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.YELLOW}Protocol: SOCKS5 | Authentication: None{Style.RESET_ALL}{' ' * 27} {Fore.CYAN}║{Style.RESET_ALL}")
+                            print(f"{Fore.CYAN}╚{'═' * 70}╝{Style.RESET_ALL}")
                         else:
                             print(f"{Fore.RED}Failed to start SOCKS5 proxy: {response}{Style.RESET_ALL}")
                     except socket.timeout:
@@ -304,18 +315,31 @@ def client_command_mode(active_client, client_sockets, server_running, print_ban
                         print(f"{Fore.GREEN}SOCKS5 Proxy Status:{Style.RESET_ALL}")
                         print(f"{Fore.WHITE}{response}{Style.RESET_ALL}")
                         
-                        # If proxy is running, show configuration box
-                        if "running" in response.lower() and "port" in response.lower():
+                        # If proxy is running, show enhanced configuration box
+                        if "running" in response.lower():
+                            print(f"\n{Fore.CYAN}╔{'═' * 70}╗{Style.RESET_ALL}")
+                            print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.WHITE}{Style.BRIGHT}CURRENT PROXY CONFIGURATION{Style.RESET_ALL}{' ' * 41} {Fore.CYAN}║{Style.RESET_ALL}")
+                            print(f"{Fore.CYAN}╠{'═' * 70}╣{Style.RESET_ALL}")
+                            
+                            # Extract and display different IP addresses
                             lines = response.split('\n')
                             for line in lines:
-                                if "proxy address:" in line.lower():
-                                    proxy_addr = line.split(': ')[-1].strip()
-                                    print(f"\n{Fore.CYAN}╔{'═' * 50}╗{Style.RESET_ALL}")
-                                    print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.WHITE}SOCKS5 Proxy Configuration:{Style.RESET_ALL}{' ' * 19} {Fore.CYAN}║{Style.RESET_ALL}")
-                                    print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.GREEN}{proxy_addr}{' ' * (47 - len(proxy_addr))}{Fore.CYAN}║{Style.RESET_ALL}")
-                                    print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.YELLOW}No authentication required{Style.RESET_ALL}{' ' * 23} {Fore.CYAN}║{Style.RESET_ALL}")
-                                    print(f"{Fore.CYAN}╚{'═' * 50}╝{Style.RESET_ALL}")
-                                    break
+                                if "LAN Access:" in line:
+                                    lan_addr = line.split(': ')[-1].strip()
+                                    print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.GREEN}LAN/Local Network:{Style.RESET_ALL} {Fore.WHITE}{lan_addr}{' ' * (47 - len(lan_addr))}{Fore.CYAN}║{Style.RESET_ALL}")
+                                elif "WAN Access:" in line:
+                                    wan_addr = line.split(': ')[-1].strip()
+                                    print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.MAGENTA}WAN/Remote Access:{Style.RESET_ALL} {Fore.WHITE}{wan_addr}{' ' * (47 - len(wan_addr))}{Fore.CYAN}║{Style.RESET_ALL}")
+                                elif "Localhost:" in line:
+                                    local_addr = line.split(': ')[-1].strip()
+                                    print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.BLUE}Localhost/Testing:{Style.RESET_ALL} {Fore.WHITE}{local_addr}{' ' * (47 - len(local_addr))}{Fore.CYAN}║{Style.RESET_ALL}")
+                                elif "Active connections:" in line:
+                                    connections = line.split(': ')[-1].strip()
+                                    print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.YELLOW}Active Connections: {connections}{' ' * (47 - len(connections))}{Fore.CYAN}║{Style.RESET_ALL}")
+                            
+                            print(f"{Fore.CYAN}║{Style.RESET_ALL}{' ' * 70} {Fore.CYAN}║{Style.RESET_ALL}")
+                            print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.YELLOW}Protocol: SOCKS5 | Authentication: None{Style.RESET_ALL}{' ' * 27} {Fore.CYAN}║{Style.RESET_ALL}")
+                            print(f"{Fore.CYAN}╚{'═' * 70}╝{Style.RESET_ALL}")
                     except socket.timeout:
                         print(f"{Fore.RED}Timeout waiting for proxy status{Style.RESET_ALL}")
                     

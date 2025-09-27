@@ -1,30 +1,41 @@
 import sys
 from colorama import Fore, Style  # type: ignore
 
-def list_clients(client_sockets):
-    """List all connected clients in a table format"""
+def list_clients(client_sockets, client_info=None):
+    """List all connected clients in a table format with public IP addresses"""
     count = 0
     print(f"\n{Fore.CYAN}Connected clients:{Style.RESET_ALL}")
     
-    # Table header
-    print(f"┌───────┬─────────────────────────────────┐")
-    print(f"│ {Fore.CYAN}ID{Style.RESET_ALL}    │ {Fore.CYAN}Client Address{Style.RESET_ALL}                  │")
-    print(f"├───────┼─────────────────────────────────┤")
+    # Table header - wider to accommodate public IPs
+    print(f"┌───────┬─────────────────────────────────────────────┐")
+    print(f"│ {Fore.CYAN}ID{Style.RESET_ALL}    │ {Fore.CYAN}Client Address (Public IP){Style.RESET_ALL}              │")
+    print(f"├───────┼─────────────────────────────────────────────┤")
     
     for i, client in enumerate(client_sockets):
         if client:
             try:
-                addr = client.getpeername()
-                addr_str = f"{addr[0]}:{addr[1]}"
-                print(f"│ {Fore.YELLOW}[{i}]{Style.RESET_ALL}   │ {Fore.WHITE}{addr_str}{' ' * (29 - len(addr_str))}   │")
+                # Use stored client info if available, otherwise fallback to getpeername
+                if client_info and client_info[i]:
+                    public_ip = client_info[i]['public_ip']
+                    # Show public IP prominently
+                    addr_str = f"{public_ip} (Public)"
+                    if len(addr_str) > 37:
+                        addr_str = addr_str[:34] + "..."
+                else:
+                    # Fallback to connection IP
+                    addr = client.getpeername()
+                    addr_str = f"{addr[0]}:{addr[1]} (Direct)"
+                
+                padding = 37 - len(addr_str)
+                print(f"│ {Fore.YELLOW}[{i}]{Style.RESET_ALL}   │ {Fore.WHITE}{addr_str}{' ' * padding}   │")
                 count += 1
             except:
                 # Handle case where socket might be in an invalid state
-                print(f"│ {Fore.YELLOW}[{i}]{Style.RESET_ALL}   │ {Fore.RED}Connection error{' ' * 14}{Style.RESET_ALL}   │")
+                print(f"│ {Fore.YELLOW}[{i}]{Style.RESET_ALL}   │ {Fore.RED}Connection error{' ' * 22}{Style.RESET_ALL}   │")
                 count += 1
     
     # Table footer
-    print(f"└───────┴─────────────────────────────────┘")
+    print(f"└───────┴─────────────────────────────────────────────┘")
     
     if count == 0:
         print(f"{Fore.RED}No clients connected{Style.RESET_ALL}")
