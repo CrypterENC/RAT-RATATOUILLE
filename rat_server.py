@@ -267,13 +267,15 @@ def accept_connections(server_socket):
                 # Extract and validate authentication key
                 if ":" in validation_response:
                     client_key = validation_response.split(":", 1)[1]
-                    current_auth_key = get_auth_key()
-                    if current_auth_key is None:
+                    # Use global AUTH_KEY directly to avoid function call issues
+                    global AUTH_KEY
+                    print(f"[DEBUG] Client key: '{client_key}', Server key: '{AUTH_KEY}'")
+                    if AUTH_KEY is None:
                         print(f"❌ Server authentication key not set! Use 'Set Auth Key' option first.")
                         client.close()
                         continue
-                    elif client_key != current_auth_key:
-                        print(f"❌ Authentication failed from {addr[0]}:{addr[1]} - invalid key: '{client_key}'")
+                    elif client_key != AUTH_KEY:
+                        print(f"❌ Authentication failed from {addr[0]}:{addr[1]} - invalid key: '{client_key}' (expected: '{AUTH_KEY}')")
                         client.close()
                         continue
                     else:

@@ -176,9 +176,9 @@ def show_options_panel(port, host, buffer_size, max_clients, client_sockets, han
         print_banner()
         
         print(f"{Fore.CYAN}=== OPTIONS ==={Style.RESET_ALL}\n")
-        # Import AUTH_KEY functions from rat_server
-        from rat_server import get_auth_key
-        AUTH_KEY = get_auth_key()
+        # Import AUTH_KEY directly from rat_server
+        import rat_server
+        AUTH_KEY = rat_server.AUTH_KEY
         
         print(f"{Fore.YELLOW}1.{Style.RESET_ALL} Port: {Fore.CYAN}{port}{Style.RESET_ALL}")
         print(f"{Fore.YELLOW}2.{Style.RESET_ALL} Host: {Fore.CYAN}{host}{Style.RESET_ALL}")
@@ -296,9 +296,9 @@ def show_options_panel(port, host, buffer_size, max_clients, client_sockets, han
             new_key = input(f"{Fore.CYAN}Key: {Style.RESET_ALL}").strip()
             
             if new_key:
-                # Update the global AUTH_KEY using the setter function
-                from rat_server import set_auth_key
-                set_auth_key(new_key)
+                # Update the global AUTH_KEY directly
+                import rat_server
+                rat_server.AUTH_KEY = new_key
                 print(f"{Fore.GREEN}Authentication key updated successfully!{Style.RESET_ALL}")
                 print(f"{Fore.YELLOW}Note: Make sure to use the same key '{new_key}' when compiling the client{Style.RESET_ALL}")
             else:
