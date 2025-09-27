@@ -26,11 +26,14 @@ def list_clients(client_sockets, client_info=None):
                         # Still detecting
                         addr_str = f"{public_ip} (Detecting...)"
                     elif status == 'failed':
-                        # Detection failed, show connection IP
-                        addr_str = f"{public_ip} (Direct)"
+                        # Detection failed, show connection IP with clear indication
+                        addr_str = f"{public_ip} (Direct - IP detection failed)"
                     else:
-                        # Default case
-                        addr_str = f"{public_ip} (Public)"
+                        # Default case - same as connection IP
+                        if public_ip == client_info[i]['connection_ip']:
+                            addr_str = f"{public_ip} (Direct)"
+                        else:
+                            addr_str = f"{public_ip} (Public)"
                     
                     if len(addr_str) > 37:
                         addr_str = addr_str[:34] + "..."

